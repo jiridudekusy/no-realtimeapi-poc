@@ -130,3 +130,54 @@ header h1 { font-size: 1.2rem; }
 }
 
 #latency-bar strong { color: #888; }
+
+#cost-bar {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  font-size: 0.75rem;
+  color: #666;
+}
+
+#cost-bar strong { color: #f59e0b; }
+
+#event-log-details {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  background: rgba(0,0,0,0.3);
+}
+
+#event-log-details summary {
+  padding: 0.5rem 0.8rem;
+  font-size: 0.8rem;
+  color: #888;
+  cursor: pointer;
+  user-select: none;
+}
+
+#event-log {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 0 0.8rem 0.5rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.7rem;
+  line-height: 1.6;
+}
+
+.log-entry {
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  padding: 0.2rem 0;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.log-time { color: #555; flex-shrink: 0; }
+.log-type { font-weight: bold; flex-shrink: 0; min-width: 70px; }
+.log-body { color: #999; word-break: break-all; }
+
+.log-type.state { color: #a855f7; }
+.log-type.stt { color: #3b82f6; }
+.log-type.metrics { color: #10b981; }
+.log-type.tool_call { color: #f59e0b; }
+.log-type.tool_result { color: #22c55e; }
+.log-type.error { color: #ef4444; }

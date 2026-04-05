@@ -42,6 +42,7 @@ You have access to tools: you can check the current time/date and get weather fo
       }),
       llm: new ToolLLM({
         model: 'gpt-4o-mini',
+        onEvent: sendEvent,
       }),
       tts: new openai.TTS({
         model: 'tts-1',
@@ -49,23 +50,47 @@ You have access to tools: you can check the current time/date and get weather fo
       }),
     });
 
+    // Helper to send events to web client
+    function sendEvent(event: Record<string, unknown>) {
+      const data = new TextEncoder().encode(JSON.stringify(event));
+      ctx.room.localParticipant?.publishData(data, { reliable: true });
+    }
+
     session.on(voice.AgentSessionEventTypes.AgentStateChanged, (ev) => {
       console.log(`Agent state: ${ev.oldState} -> ${ev.newState}`);
+      sendEvent({ type: 'state', oldState: ev.oldState, newState: ev.newState });
     });
 
     session.on(voice.AgentSessionEventTypes.UserInputTranscribed, (ev) => {
       console.log(`User (final=${ev.isFinal}): ${ev.transcript}`);
+      if (ev.isFinal) {
+        sendEvent({ type: 'stt', transcript: ev.transcript });
+      }
     });
 
     session.on(voice.AgentSessionEventTypes.MetricsCollected, (ev) => {
       console.log('Metrics:', JSON.stringify(ev.metrics));
       const m = ev.metrics;
       const payload: Record<string, unknown> = { type: 'metrics' };
-      if (m.type === 'stt_metrics') payload.sttDuration = m.durationMs;
-      else if (m.type === 'llm_metrics') payload.llmDuration = m.durationMs;
-      else if (m.type === 'tts_metrics') payload.ttsDuration = m.durationMs;
-      const data = new TextEncoder().encode(JSON.stringify(payload));
-      ctx.room.localParticipant?.publishData(data, { reliable: true });
+      if (m.type === 'stt_metrics') {
+        payload.sttDuration = m.durationMs;
+        payload.sttAudioMs = m.audioDurationMs;
+      } else if (m.type === 'llm_metrics') {
+        payload.llmDuration = m.durationMs;
+        payload.llmPromptTokens = m.promptTokens;
+        payload.llmCompletionTokens = m.completionTokens;
+        payload.llmTotalTokens = m.totalTokens;
+        payload.llmTokensPerSec = m.tokensPerSecond;
+      } else if (m.type === 'tts_metrics') {
+        payload.ttsDuration = m.durationMs;
+        payload.ttsChars = m.charactersCount;
+      }
+      sendEvent(payload);
+    });
+
+    session.on(voice.AgentSessionEventTypes.Close, (ev) => {
+      console.log('Session closed:', ev.reason, ev.error);
+      sendEvent({ type: 'error', reason: ev.reason, error: ev.error ? String(ev.error) : null });
     });
 
     await session.start({ agent, room: ctx.room });

@@ -2,10 +2,13 @@ import { llm } from '@livekit/agents';
 import OpenAI from 'openai';
 import { toolDefinitions, executeTool } from './tools.js';
 
+export type EventSender = (event: Record<string, unknown>) => void;
+
 interface ToolLLMOptions {
   model?: string;
   apiKey?: string;
   maxToolRounds?: number;
+  onEvent?: EventSender;
 }
 
 /**
@@ -17,12 +20,14 @@ export class ToolLLM extends llm.LLM {
   #client: OpenAI;
   #model: string;
   #maxToolRounds: number;
+  #onEvent: EventSender;
 
   constructor(opts: ToolLLMOptions = {}) {
     super();
     this.#client = new OpenAI({ apiKey: opts.apiKey || process.env.OPENAI_API_KEY });
     this.#model = opts.model || 'gpt-4o-mini';
     this.#maxToolRounds = opts.maxToolRounds || 5;
+    this.#onEvent = opts.onEvent || (() => {});
   }
 
   label(): string {
@@ -45,6 +50,7 @@ export class ToolLLM extends llm.LLM {
       client: this.#client,
       model: this.#model,
       maxToolRounds: this.#maxToolRounds,
+      onEvent: this.#onEvent,
       chatCtx: opts.chatCtx,
       toolCtx: opts.toolCtx,
       connOptions: opts.connOptions || { timeoutMs: 30000 },
@@ -56,6 +62,7 @@ class ToolLLMStream extends llm.LLMStream {
   #client: OpenAI;
   #model: string;
   #maxToolRounds: number;
+  #onEvent: EventSender;
 
   constructor(
     llmInstance: ToolLLM,
@@ -63,6 +70,7 @@ class ToolLLMStream extends llm.LLMStream {
       client: OpenAI;
       model: string;
       maxToolRounds: number;
+      onEvent: EventSender;
       chatCtx: llm.ChatContext;
       toolCtx?: llm.ToolContext;
       connOptions: any;
@@ -76,6 +84,7 @@ class ToolLLMStream extends llm.LLMStream {
     this.#client = opts.client;
     this.#model = opts.model;
     this.#maxToolRounds = opts.maxToolRounds;
+    this.#onEvent = opts.onEvent;
   }
 
   protected async run(): Promise<void> {
@@ -169,6 +178,7 @@ class ToolLLMStream extends llm.LLMStream {
 
       for (const tc of toolCalls.values()) {
         console.log(`[ToolLLM] Executing tool: ${tc.name}(${tc.args})`);
+        this.#onEvent({ type: 'tool_call', name: tc.name, args: tc.args });
         let result: string;
         try {
           const args = JSON.parse(tc.args);
@@ -177,6 +187,7 @@ class ToolLLMStream extends llm.LLMStream {
           result = JSON.stringify({ error: `Tool execution failed: ${e}` });
         }
         console.log(`[ToolLLM] Tool result: ${result}`);
+        this.#onEvent({ type: 'tool_result', name: tc.name, result });
 
         messages.push({
           role: 'tool',

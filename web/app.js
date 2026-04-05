@@ -161,6 +161,20 @@ room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
 
 const latency = { stt: 0, llm: 0, tts: 0 };
 
+// Cumulative cost tracking
+// Prices: GPT-4o-mini input $0.15/1M, output $0.60/1M, TTS-1 $15/1M chars, Deepgram STT $0.0043/min
+const cost = { totalTokens: 0, promptTokens: 0, completionTokens: 0, ttsChars: 0, sttAudioMs: 0 };
+
+function updateCostDisplay() {
+  $('#cost-tokens').textContent = `${cost.promptTokens}/${cost.completionTokens}`;
+  $('#cost-chars').textContent = cost.ttsChars.toString();
+  const llmCost = (cost.promptTokens * 0.15 + cost.completionTokens * 0.60) / 1_000_000;
+  const ttsCost = (cost.ttsChars * 15) / 1_000_000;
+  const sttCost = (cost.sttAudioMs / 60_000) * 0.0043;
+  const total = llmCost + ttsCost + sttCost;
+  $('#cost-total').textContent = `$${total.toFixed(4)}`;
+}
+
 function updateBubbleLatency() {
   const el = state.currentAssistMsg || state.lastAssistMsg;
   if (!el) return;
@@ -173,9 +187,33 @@ function updateBubbleLatency() {
   if (parts.length > 0) updateMessage(el, null, { latency: parts.join(' · ') });
 }
 
+// --- Event Log ---
+
+function logEvent(type, body) {
+  const log = $('#event-log');
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+
+  const time = new Date().toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  entry.innerHTML = `<span class="log-time">${time}</span><span class="log-type ${type}">${type}</span><span class="log-body">${body}</span>`;
+
+  log.appendChild(entry);
+  log.scrollTop = log.scrollHeight;
+}
+
+function formatMetrics(msg) {
+  const parts = [];
+  if (msg.sttDuration != null) parts.push(`STT ${Math.round(msg.sttDuration)}ms (${msg.sttAudioMs || 0}ms audio)`);
+  if (msg.llmDuration != null) parts.push(`LLM ${Math.round(msg.llmDuration)}ms (${msg.llmPromptTokens || 0}+${msg.llmCompletionTokens || 0} tok, ${Math.round(msg.llmTokensPerSec || 0)} t/s)`);
+  if (msg.ttsDuration != null) parts.push(`TTS ${Math.round(msg.ttsDuration)}ms (${msg.ttsChars || 0} chars)`);
+  return parts.join(' | ');
+}
+
 room.on(RoomEvent.DataReceived, (data, participant) => {
   try {
     const msg = JSON.parse(new TextDecoder().decode(data));
+
+    // Metrics handling (latency bar + bubble + cost)
     if (msg.type === 'metrics') {
       if (msg.sttDuration != null) { latency.stt = msg.sttDuration; $('#lat-stt').textContent = `${Math.round(latency.stt)}ms`; }
       if (msg.llmDuration != null) { latency.llm = msg.llmDuration; $('#lat-llm').textContent = `${Math.round(latency.llm)}ms`; }
@@ -183,6 +221,39 @@ room.on(RoomEvent.DataReceived, (data, participant) => {
       const total = latency.stt + latency.llm + latency.tts;
       if (total > 0) $('#lat-total').textContent = `${Math.round(total)}ms`;
       updateBubbleLatency();
+
+      // Accumulate cost
+      if (msg.llmPromptTokens) { cost.promptTokens += msg.llmPromptTokens; cost.completionTokens += msg.llmCompletionTokens || 0; cost.totalTokens += msg.llmTotalTokens || 0; }
+      if (msg.ttsChars) cost.ttsChars += msg.ttsChars;
+      if (msg.sttAudioMs) cost.sttAudioMs += msg.sttAudioMs;
+      updateCostDisplay();
+
+      logEvent('metrics', formatMetrics(msg));
+    }
+
+    // State changes
+    else if (msg.type === 'state') {
+      logEvent('state', `${msg.oldState} → ${msg.newState}`);
+    }
+
+    // STT final transcript
+    else if (msg.type === 'stt') {
+      logEvent('stt', msg.transcript);
+    }
+
+    // Tool call
+    else if (msg.type === 'tool_call') {
+      logEvent('tool_call', `${msg.name}(${msg.args})`);
+    }
+
+    // Tool result
+    else if (msg.type === 'tool_result') {
+      logEvent('tool_result', `${msg.name} → ${msg.result}`);
+    }
+
+    // Errors
+    else if (msg.type === 'error') {
+      logEvent('error', `${msg.reason}${msg.error ? ': ' + msg.error : ''}`);
     }
   } catch (e) { console.warn('Failed to parse data message:', e); }
 });
