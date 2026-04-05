@@ -1,0 +1,33 @@
+{
+  "name": "realtimeapi",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "build": "tsc",
+    "agent": "node dist/agent.js dev",
+    "token-server": "node dist/token-server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@livekit/agents": "^1.2.3",
+    "@livekit/agents-plugin-deepgram": "^1.2.3",
+    "@livekit/agents-plugin-openai": "^1.2.3",
+    "@livekit/agents-plugin-silero": "^1.2.3",
+    "dotenv": "^17.4.0",
+    "express": "^5.2.1",
+    "livekit-server-sdk": "^2.15.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.2",
+    "typescript": "^6.0.2"
+  }
+}
