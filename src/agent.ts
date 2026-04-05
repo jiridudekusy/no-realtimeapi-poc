@@ -83,8 +83,8 @@ export default defineAgent({
 
       // If we're already processing, abort previous (barge-in)
       if (processing) {
-        console.log('[Agent] Barge-in detected, aborting previous response');
-        claude.abort();
+        console.log('[Agent] Barge-in detected, interrupting previous response');
+        claude.interrupt();
       }
 
       processing = true;

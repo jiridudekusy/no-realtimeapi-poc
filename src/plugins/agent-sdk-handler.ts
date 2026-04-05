@@ -1,6 +1,6 @@
 import {
-  unstable_v2_createSession,
-  type SDKSession,
+  query,
+  type Query,
   type SDKMessage,
   type CanUseTool,
   type PermissionResult,
@@ -36,21 +36,17 @@ interface AgentSDKHandlerOptions {
 export class AgentSDKHandler {
   #model: string;
   #onEvent: EventSender;
-  #session: SDKSession | null = null;
-  #firstTurn = true;
+  #sessionId: string | null = null;
+  #currentQuery: Query | null = null;
   #abortController: AbortController | null = null;
-  #pendingResults = 0;
-  #queue: Promise<void> = Promise.resolve(); // Serializes sends
 
   constructor(opts: AgentSDKHandlerOptions = {}) {
     this.#model = opts.model || 'claude-sonnet-4-6';
     this.#onEvent = opts.onEvent || (() => {});
   }
 
-  #ensureSession(): SDKSession {
-    if (this.#session) return this.#session;
-
-    const canUseTool: CanUseTool = async (
+  #makeCanUseTool(): CanUseTool {
+    return async (
       toolName: string,
       input: Record<string, unknown>,
     ): Promise<PermissionResult> => {
@@ -64,98 +60,88 @@ export class AgentSDKHandler {
       }
       return { behavior: 'allow' };
     };
-
-    this.#session = unstable_v2_createSession({
-      model: this.#model,
-      permissionMode: 'bypassPermissions',
-      canUseTool,
-    });
-    this.#firstTurn = true;
-    this.#pendingResults = 0;
-    console.log(`[AgentSDK] Session created (${this.#model})`);
-    this.#onEvent({ type: 'agent_sdk', event: 'session_created' });
-    return this.#session;
   }
 
+  /**
+   * Send user text to Claude via query() API.
+   * Each call is a self-contained query with clean lifecycle.
+   * Uses resume to maintain conversation history across turns.
+   */
   async sendAndStream(
     userText: string,
     onSentence: (sentence: string) => void,
   ): Promise<void> {
-    // Serialize: wait for previous turn to finish before sending
-    const prev = this.#queue;
-    let resolve: () => void;
-    this.#queue = new Promise<void>((r) => { resolve = r; });
-    await prev;
-
-    try {
-      await this.#doSendAndStream(userText, onSentence);
-    } finally {
-      resolve!();
-    }
-  }
-
-  async #doSendAndStream(
-    userText: string,
-    onSentence: (sentence: string) => void,
-  ): Promise<void> {
-    const session = this.#ensureSession();
-
-    let text = userText;
-    if (this.#firstTurn) {
-      this.#firstTurn = false;
-      text = `${SYSTEM_INSTRUCTIONS}\n\nUser: ${userText}`;
+    // Abort previous query if still running
+    if (this.#abortController) {
+      console.log('[AgentSDK] Interrupting previous query');
+      this.#abortController.abort();
     }
 
-    this.#abortController?.abort();
     this.#abortController = new AbortController();
-    const signal = this.#abortController.signal;
 
-    console.log(`[AgentSDK] Sending: ${text.slice(0, 200)}...`);
-    this.#onEvent({ type: 'llm_send', text: userText });
-    await session.send(text);
-
-    // Get fresh iterator for this turn
-    const iter = session.stream() as AsyncGenerator<SDKMessage>;
-
-    // Skip any pending results from previous turns that weren't consumed
-    let skipped = 0;
-    while (this.#pendingResults > 0) {
-      const { value, done } = await iter.next();
-      if (done) break;
-      const msg = value as any;
-      console.log(`[AgentSDK] Skipping old msg: type=${msg.type}`);
-      if (msg.type === 'result') {
-        this.#pendingResults--;
-        skipped++;
-      }
+    const isFirst = !this.#sessionId;
+    if (isFirst) {
+      this.#onEvent({ type: 'agent_sdk', event: 'session_created' });
     }
-    if (skipped > 0) console.log(`[AgentSDK] Skipped ${skipped} old results`);
+
+    console.log(`[AgentSDK] Query: ${userText.slice(0, 80)}... (session=${this.#sessionId || 'new'})`);
+    this.#onEvent({ type: 'llm_send', text: userText });
+
+    const q = query({
+      prompt: userText,
+      options: {
+        model: this.#model,
+        systemPrompt: SYSTEM_INSTRUCTIONS,
+        abortController: this.#abortController,
+        permissionMode: 'bypassPermissions',
+        canUseTool: this.#makeCanUseTool(),
+        mcpServers: {},
+        ...(this.#sessionId ? { resume: this.#sessionId } : {}),
+      },
+    });
+    this.#currentQuery = q;
 
     let fullText = '';
-    let gotAssistant = false;
 
-    for await (const message of iter) {
-      if (signal.aborted) {
-        console.log('[AgentSDK] Aborted');
-        this.#pendingResults++; // This turn's result will be pending
-        break;
-      }
+    try {
+      for await (const message of q) {
+        const msg = message as any;
 
-      const msg = message as any;
+        // Capture sessionId from result
+        if (msg.type === 'result') {
+          if (msg.sessionId) {
+            this.#sessionId = msg.sessionId;
+          }
 
-      if (msg.type === 'assistant' && msg.message?.content) {
-        gotAssistant = true;
-        for (const block of msg.message.content) {
-          if (block.type === 'text' && block.text) {
-            console.log(`[AgentSDK] Text (${block.text.length}ch): ${block.text.slice(0, 80)}`);
-            fullText += block.text;
+          // Emit remaining text
+          if (fullText.trim()) {
+            this.#onEvent({ type: 'llm_recv', text: fullText.trim() });
+            onSentence(fullText.trim());
+            fullText = '';
+          }
 
+          if (msg.subtype === 'success') {
+            this.#onEvent({ type: 'agent_sdk', event: 'turn_complete', cost: msg.total_cost_usd, result: msg.result?.slice(0, 100) });
+          } else {
+            console.error(`[AgentSDK] Turn error: ${msg.subtype}`);
+            this.#onEvent({ type: 'agent_sdk', event: 'turn_error', error: msg.subtype });
+          }
+          break;
+        }
+
+        // Streaming text deltas
+        if (msg.type === 'stream_event') {
+          const evt = msg.event;
+          if (evt?.type === 'content_block_delta' && evt.delta?.type === 'text_delta' && evt.delta.text) {
+            fullText += evt.delta.text;
+
+            // Emit complete sentences
             const sentences = fullText.match(/[^.!?]+[.!?]+\s*/g) || [];
             const emitted = sentences.join('');
             const remainder = fullText.slice(emitted.length);
 
             for (const sentence of sentences) {
-              if (sentence.trim() && !signal.aborted) {
+              if (sentence.trim()) {
                 this.#onEvent({ type: 'llm_recv', text: sentence.trim() });
                 onSentence(sentence.trim());
               }
@@ -163,37 +149,54 @@ export class AgentSDKHandler {
             fullText = remainder;
           }
         }
-      } else if (msg.type === 'result') {
-        // If we got a result without any assistant message, it might be from a previous turn
-        if (!gotAssistant) {
-          console.log('[AgentSDK] Got orphaned result (no assistant msg), skipping');
-          continue; // Keep reading for the real response
-        }
 
-        if (fullText.trim() && !signal.aborted) {
-          this.#onEvent({ type: 'llm_recv', text: fullText.trim() });
-          onSentence(fullText.trim());
-        }
-        fullText = '';
+        // Full assistant message (fallback if no streaming)
+        if (msg.type === 'assistant' && msg.message?.content) {
+          for (const block of msg.message.content) {
+            if (block.type === 'text' && block.text) {
+              console.log(`[AgentSDK] Text (${block.text.length}ch): ${block.text.slice(0, 80)}`);
+              fullText += block.text;
 
-        if (msg.subtype === 'success') {
-          this.#onEvent({ type: 'agent_sdk', event: 'turn_complete', cost: msg.total_cost_usd, usage: msg.usage });
-        } else {
-          console.error(`[AgentSDK] Turn error: ${msg.subtype}`);
-          this.#onEvent({ type: 'agent_sdk', event: 'turn_error', error: msg.subtype });
+              const sentences = fullText.match(/[^.!?]+[.!?]+\s*/g) || [];
+              const emitted = sentences.join('');
+              const remainder = fullText.slice(emitted.length);
+
+              for (const sentence of sentences) {
+                if (sentence.trim()) {
+                  this.#onEvent({ type: 'llm_recv', text: sentence.trim() });
+                  onSentence(sentence.trim());
+                }
+              }
+              fullText = remainder;
+            }
+          }
         }
-        break;
       }
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || this.#abortController?.signal.aborted) {
+        console.log('[AgentSDK] Query aborted (barge-in)');
+        this.#onEvent({ type: 'agent_sdk', event: 'interrupted' });
+      } else {
+        console.error('[AgentSDK] Query error:', err);
+        this.#onEvent({ type: 'agent_sdk', event: 'error', error: String(err) });
+        throw err;
+      }
+    } finally {
+      this.#currentQuery = null;
     }
   }
 
-  abort(): void {
+  /** Interrupt current query (barge-in / Ctrl+C equivalent). */
+  interrupt(): void {
+    if (this.#currentQuery) {
+      console.log('[AgentSDK] Interrupting via query.interrupt()');
+      this.#currentQuery.interrupt().catch(() => {});
+    }
     this.#abortController?.abort();
-    this.#pendingResults++;
   }
 
   close(): void {
-    try { this.#session?.close(); } catch {}
-    this.#session = null;
+    this.interrupt();
+    this.#sessionId = null;
   }
 }
