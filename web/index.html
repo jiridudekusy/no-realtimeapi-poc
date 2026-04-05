@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Assistant</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Voice Assistant</h1>
+      <span id="status" class="status disconnected">● Disconnected</span>
+    </header>
+
+    <div id="mic-section">
+      <button id="mic-btn" class="mic-btn" disabled>🎙️</button>
+      <div id="mic-label">Connect to start</div>
+    </div>
+
+    <div id="conversation"></div>
+
+    <div id="controls">
+      <button id="connect-btn">Connect</button>
+      <button id="disconnect-btn" disabled>Disconnect</button>
+    </div>
+
+    <div id="latency-bar">
+      <span>STT <strong id="lat-stt">—</strong></span>
+      <span>LLM <strong id="lat-llm">—</strong></span>
+      <span>TTS <strong id="lat-tts">—</strong></span>
+      <span>Total <strong id="lat-total">—</strong></span>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
