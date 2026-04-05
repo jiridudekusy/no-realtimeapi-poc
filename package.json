@@ -19,13 +19,15 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.92",
     "@livekit/agents": "^1.2.3",
     "@livekit/agents-plugin-deepgram": "^1.2.3",
     "@livekit/agents-plugin-openai": "^1.2.3",
     "@livekit/agents-plugin-silero": "^1.2.3",
     "dotenv": "^17.4.0",
     "express": "^5.2.1",
-    "livekit-server-sdk": "^2.15.0"
+    "livekit-server-sdk": "^2.15.0",
+    "openai": "^6.33.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
