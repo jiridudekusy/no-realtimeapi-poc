@@ -153,7 +153,21 @@ header h1 { font-size: 1.2rem; }
   color: #888;
   cursor: pointer;
   user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
+
+#copy-log-btn {
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #888;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+#copy-log-btn:hover { color: #ccc; background: rgba(255,255,255,0.15); }
 
 #event-log {
   max-height: 200px;
@@ -182,3 +196,5 @@ header h1 { font-size: 1.2rem; }
 .log-type.tool_result { color: #22c55e; }
 .log-type.error { color: #ef4444; }
 .log-type.agent { color: #06b6d4; }
+.log-type.llm_send { color: #f97316; }
+.log-type.llm_recv { color: #a3e635; }

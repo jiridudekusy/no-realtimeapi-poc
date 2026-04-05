@@ -115,8 +115,10 @@ room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
     const el = track.attach();
     el.id = `audio-${participant.identity}`;
     document.body.appendChild(el);
+    room.startAudio();
   }
 });
+
 
 room.on(RoomEvent.TrackUnsubscribed, (track) => {
   track.detach().forEach((el) => el.remove());
@@ -197,9 +199,33 @@ function logEvent(type, body) {
   const time = new Date().toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   entry.innerHTML = `<span class="log-time">${time}</span><span class="log-type ${type}">${type}</span><span class="log-body">${body}</span>`;
 
+  // Only auto-scroll if user is near the bottom
+  const isNearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 50;
   log.appendChild(entry);
-  log.scrollTop = log.scrollHeight;
+  if (isNearBottom) log.scrollTop = log.scrollHeight;
 }
+
+function copyLog() {
+  const log = $('#event-log');
+  const entries = log.querySelectorAll('.log-entry');
+  const text = Array.from(entries).map(e => {
+    const time = e.querySelector('.log-time')?.textContent || '';
+    const type = e.querySelector('.log-type')?.textContent || '';
+    const body = e.querySelector('.log-body')?.textContent || '';
+    return `${time}\t${type}\t${body}`;
+  }).join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = $('#copy-log-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+$('#copy-log-btn').addEventListener('click', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  copyLog();
+});
 
 function formatMetrics(msg) {
   const parts = [];
@@ -254,6 +280,16 @@ room.on(RoomEvent.DataReceived, (data, participant) => {
     // Errors
     else if (msg.type === 'error') {
       logEvent('error', `${msg.reason}${msg.error ? ': ' + msg.error : ''}`);
+    }
+
+    // LLM send (what we sent to Claude)
+    else if (msg.type === 'llm_send') {
+      logEvent('llm_send', msg.text);
+    }
+
+    // LLM receive (sentence from Claude)
+    else if (msg.type === 'llm_recv') {
+      logEvent('llm_recv', msg.text);
     }
 
     // Agent SDK events
