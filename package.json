@@ -10,7 +10,9 @@
     "build": "tsc",
     "agent": "node dist/agent.js dev",
     "token-server": "node dist/token-server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "npm run build && concurrently \"npm run agent\" \"npm run token-server\"",
+    "dev": "npm run build && concurrently --names agent,web --prefix-colors blue,green \"npm run agent\" \"npm run token-server\""
   },
   "keywords": [],
   "author": "",
@@ -28,6 +30,7 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.2",
+    "concurrently": "^9.2.1",
     "typescript": "^6.0.2"
   }
 }
