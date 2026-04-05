@@ -10,6 +10,7 @@ import {
 import * as deepgram from '@livekit/agents-plugin-deepgram';
 import * as silero from '@livekit/agents-plugin-silero';
 import * as openai from '@livekit/agents-plugin-openai';
+import { ToolLLM } from './plugins/tool-llm.js';
 import { fileURLToPath } from 'node:url';
 
 export default defineAgent({
@@ -28,7 +29,9 @@ IMPORTANT: Your text output is read aloud by a text-to-speech engine. Format eve
 - No special characters, symbols, or abbreviations — spell everything out phonetically
 - Write units as words: "kilogramů" not "kg", "procent" not "%"
 - Spell out acronyms letter by letter with spaces: "A P I" not "API", "H T T P" not "HTTP", "U R L" not "URL"
-- No URLs — describe the source instead`,
+- No URLs — describe the source instead
+
+You have access to tools: you can check the current time/date and get weather for any location. Use them when relevant.`,
     });
 
     const session = new voice.AgentSession({
@@ -37,7 +40,7 @@ IMPORTANT: Your text output is read aloud by a text-to-speech engine. Format eve
         model: 'nova-3',
         language: 'cs',
       }),
-      llm: new openai.LLM({
+      llm: new ToolLLM({
         model: 'gpt-4o-mini',
       }),
       tts: new openai.TTS({
