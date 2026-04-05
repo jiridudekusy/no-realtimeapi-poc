@@ -8,3 +8,20 @@ services:
       - "50000-50060:50000-50060/udp"
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
+
+  agent:
+    build: .
+    env_file: .env
+    ports:
+      - "3001:3001"
+    environment:
+      - LIVEKIT_URL=ws://livekit:7880
+    volumes:
+      - claude-auth:/home/node/.claude
+      - ./src:/app/src
+      - ./web:/app/web
+    depends_on:
+      - livekit
+
+volumes:
+  claude-auth:
