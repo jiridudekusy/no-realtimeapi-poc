@@ -2,7 +2,7 @@
 
 > **Proof of Concept** — This is an experiment exploring how to build a real-time voice assistant without OpenAI's Realtime API. Not production-ready, not a final solution — just a PoC showing it's possible and what the tradeoffs look like.
 
-Low-latency voice assistant built on [LiveKit](https://livekit.io/) (open-source WebRTC). A pluggable STT/LLM/TTS pipeline that's **~90x cheaper** than OpenAI Realtime API.
+Low-latency voice assistant built on [LiveKit](https://livekit.io/) (open-source WebRTC) with [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk) as the brain.
 
 ## How it works
 
@@ -10,32 +10,23 @@ Low-latency voice assistant built on [LiveKit](https://livekit.io/) (open-source
 Browser (WebRTC) ──► LiveKit Server (SFU) ──► Agent Worker (Node.js)
                  ◄──                       ◄──
 
-Agent pipeline: Silero VAD → Deepgram STT → LLM (with tools) → OpenAI TTS
+Pipeline: Silero VAD → Deepgram STT → Claude Agent SDK → OpenAI TTS
 ```
 
 - **STT**: Deepgram Nova-3 (streaming, Czech)
-- **LLM**: GPT-4o-mini with custom tool calling middleware
+- **LLM**: Claude via Agent SDK (full agent capabilities — bash, file editing, internet access)
 - **TTS**: OpenAI tts-1 (Nova voice, multilingual)
 - **VAD**: Silero (voice activity detection)
-- **Tools**: Current time, weather (Open-Meteo)
 
-All components are pluggable — swap any provider by changing one line.
-
-## Cost comparison (1 hour of conversation)
-
-| | This project | OpenAI Realtime API |
-|---|---|---|
-| **Cost/hour** | ~$0.65 | ~$58 |
-| Latency | ~2-3s | ~0.5-1s |
-| Flexibility | Any STT/LLM/TTS | OpenAI only |
+LiveKit handles WebRTC transport, VAD, STT, and TTS. The LLM step runs outside the LiveKit pipeline — STT transcripts go to Claude Agent SDK, responses come back via `session.say()`.
 
 ## Quick start
 
 ### Prerequisites
 
-- Node.js 20+
 - Docker
 - API keys: [Deepgram](https://console.deepgram.com), [OpenAI](https://platform.openai.com)
+- Claude subscription (for Agent SDK)
 
 ### Setup
 
@@ -44,18 +35,18 @@ All components are pluggable — swap any provider by changing one line.
 git clone https://github.com/jiridudekusy/no-realtimeapi-poc.git
 cd no-realtimeapi-poc
 
-# Install
-npm install
-
 # Configure
 cp .env.example .env
 # Edit .env — add your Deepgram and OpenAI API keys
 
-# Start LiveKit server
-docker compose up -d
+# Build and start everything
+docker compose up -d --build
 
-# Start agent + web client
-npm run dev
+# Login to Claude (once — persisted in Docker volume)
+docker compose exec agent claude login
+
+# Follow logs
+docker compose logs agent -f
 ```
 
 Open **http://localhost:3001**, click **Connect**, allow microphone, and start talking.
@@ -67,18 +58,19 @@ Open **http://localhost:3001**, click **Connect**, allow microphone, and start t
 - Latency breakdown per response (STT / LLM / TTS)
 - Cumulative cost tracking (tokens, characters, estimated USD)
 - Server event log (state changes, tool calls, metrics, errors)
+- Copy log to clipboard
 
 ## Project structure
 
 ```
-├── docker-compose.yml        # LiveKit server
+├── Dockerfile                # Agent worker container
+├── docker-compose.yml        # LiveKit server + agent
 ├── livekit.yaml              # LiveKit config
 ├── src/
-│   ├── agent.ts              # Voice pipeline agent
+│   ├── agent.ts              # LiveKit agent — STT events → Claude → say()
 │   ├── token-server.ts       # Express: JWT tokens + static files
 │   └── plugins/
-│       ├── tool-llm.ts       # Custom LLM with tool calling loop
-│       └── tools.ts          # Tool definitions (time, weather)
+│       └── agent-sdk-handler.ts  # Claude Agent SDK wrapper (query API + resume)
 ├── web/
 │   ├── index.html            # Web client
 │   ├── style.css
@@ -86,27 +78,25 @@ Open **http://localhost:3001**, click **Connect**, allow microphone, and start t
 └── .env.example              # Environment template
 ```
 
-## Swapping components
+## Architecture
 
-Edit `src/agent.ts`:
+The key insight: LiveKit pipeline handles only **VAD + STT + TTS** (no LLM plugin). The LLM step is handled outside the pipeline:
 
-```typescript
-// Change STT
-stt: new deepgram.STT({ model: 'nova-3', language: 'cs' }),
-// or: new openai.STT({ model: 'whisper-1' }),
+1. `UserInputTranscribed` event fires with STT text
+2. Text is sent to Claude Agent SDK via `query()` API
+3. Claude responds (possibly using tools — bash, files, curl)
+4. Response sentences are fed back via `agentSession.say()`
+5. LiveKit TTS converts to audio and sends via WebRTC
 
-// Change LLM
-llm: new ToolLLM({ model: 'gpt-4o-mini' }),
-// or: new openai.LLM({ model: 'gpt-4o' }),
+Session persistence via `resume: sessionId` — Claude remembers the full conversation.
 
-// Change TTS
-tts: new openai.TTS({ model: 'tts-1', voice: 'nova' }),
-// or: new deepgram.TTS({ model: 'aura-asteria-en' }),  // English only
-```
+## Claude Agent SDK integration
 
-## Adding tools
-
-Edit `src/plugins/tools.ts` to add tool definitions and executors. The custom `ToolLLM` handles the tool calling loop automatically — when the LLM returns a tool call, it executes it and feeds the result back before streaming the final response.
+- **v1 `query()` API** — each turn = clean query call with `abortController`
+- **`resume: sessionId`** — conversation history persists across turns
+- **`query.interrupt()`** — barge-in support (Ctrl+C equivalent)
+- **`canUseTool` callback** — logs and controls tool permissions
+- **`--strict-mcp-config`** — skips loading user's MCP servers for faster startup
 
 ## License
 
