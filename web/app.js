@@ -269,7 +269,7 @@ room.on(RoomEvent.DataReceived, (data, participant) => {
 
     // Tool call
     else if (msg.type === 'tool_call') {
-      logEvent('tool_call', `${msg.name}(${msg.args})`);
+      logEvent('tool_call', `${msg.name}: ${msg.input}`);
     }
 
     // Tool result

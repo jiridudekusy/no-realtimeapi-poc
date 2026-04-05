@@ -23,7 +23,9 @@ const SYSTEM_INSTRUCTIONS = `You are a helpful voice assistant. Your responses w
 - Use plain conversational language without markdown formatting
 - Do not use bullet points, asterisks, pound signs, or other markdown
 - Keep responses concise — two to three sentences max unless the user asks for detail
-- Spell out numbers and abbreviations when needed for clarity
+- NEVER write digits or numerals — always spell out every number as words: "třicet dva tisíc" not "32000", "devět celých sedm osm" not "9.78"
+- NEVER write units as symbols — always spell them out: "kilogramů" not "kg", "stupňů Celsia" not "°C", "procent" not "%", "metrů" not "m"
+- Spell out acronyms letter by letter with spaces: "A P I" not "API", "H T T P" not "HTTP"
 - Avoid code blocks; describe code changes in plain language
 - You have full access to bash, file system, and the internet via curl
 - Respond in the language the user speaks (Czech or English)`;
@@ -93,9 +95,10 @@ export class AgentSDKHandler {
         model: this.#model,
         systemPrompt: SYSTEM_INSTRUCTIONS,
         abortController: this.#abortController,
-        permissionMode: 'bypassPermissions',
+        permissionMode: 'default',
         canUseTool: this.#makeCanUseTool(),
         mcpServers: {},
+        extraArgs: { 'strict-mcp-config': null }, // Ignore all user/project MCP configs
         ...(this.#sessionId ? { resume: this.#sessionId } : {}),
       },
     });
@@ -106,6 +109,16 @@ export class AgentSDKHandler {
     try {
       for await (const message of q) {
         const msg = message as any;
+
+        // Capture sessionId from any message that has it
+        if (msg.session_id && !this.#sessionId) {
+          this.#sessionId = msg.session_id;
+          console.log(`[AgentSDK] Session ID captured: ${this.#sessionId}`);
+        }
+        if (msg.sessionId && !this.#sessionId) {
+          this.#sessionId = msg.sessionId;
+          console.log(`[AgentSDK] Session ID captured: ${this.#sessionId}`);
+        }
 
         // Capture sessionId from result
         if (msg.type === 'result') {
@@ -150,7 +163,20 @@ export class AgentSDKHandler {
           }
         }
 
-        // Full assistant message (fallback if no streaming)
+        // Log tool use from assistant messages (Bash, Read, Write, etc.)
+        if (msg.type === 'assistant' && msg.message?.content) {
+          for (const block of msg.message.content) {
+            if (block.type === 'tool_use') {
+              const input = block.input || {};
+              const cmd = input.command || input.file_path || input.pattern || JSON.stringify(input);
+              const inputStr = typeof cmd === 'string' ? cmd.slice(0, 300) : JSON.stringify(cmd).slice(0, 300);
+              console.log(`[AgentSDK] Tool call: ${block.name}: ${inputStr.slice(0, 100)}`);
+              this.#onEvent({ type: 'tool_call', name: block.name, input: inputStr });
+            }
+          }
+        }
+
+        // Full assistant message text (fallback if no streaming)
         if (msg.type === 'assistant' && msg.message?.content) {
           for (const block of msg.message.content) {
             if (block.type === 'text' && block.text) {
