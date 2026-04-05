@@ -1,5 +1,7 @@
 # no-realtimeapi-poc
 
+> **Proof of Concept** — This is an experiment exploring how to build a real-time voice assistant without OpenAI's Realtime API. Not production-ready, not a final solution — just a PoC showing it's possible and what the tradeoffs look like.
+
 Low-latency voice assistant built on [LiveKit](https://livekit.io/) (open-source WebRTC). A pluggable STT/LLM/TTS pipeline that's **~90x cheaper** than OpenAI Realtime API.
 
 ## How it works
