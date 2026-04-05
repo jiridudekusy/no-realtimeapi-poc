@@ -255,5 +255,20 @@ room.on(RoomEvent.DataReceived, (data, participant) => {
     else if (msg.type === 'error') {
       logEvent('error', `${msg.reason}${msg.error ? ': ' + msg.error : ''}`);
     }
+
+    // Agent SDK events
+    else if (msg.type === 'agent_sdk') {
+      logEvent('agent', `${msg.event}${msg.state ? ': ' + msg.state : ''}${msg.cost != null ? ' ($' + msg.cost.toFixed(4) + ')' : ''}${msg.error ? ': ' + msg.error : ''}`);
+    }
+
+    // Tool use (Claude Agent SDK)
+    else if (msg.type === 'tool_use') {
+      logEvent('tool_call', `${msg.title || msg.tool}: ${msg.input}`);
+    }
+
+    // Tool denied
+    else if (msg.type === 'tool_denied') {
+      logEvent('error', `DENIED ${msg.tool}: ${msg.reason}`);
+    }
   } catch (e) { console.warn('Failed to parse data message:', e); }
 });

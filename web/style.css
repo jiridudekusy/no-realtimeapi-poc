@@ -181,3 +181,4 @@ header h1 { font-size: 1.2rem; }
 .log-type.tool_call { color: #f59e0b; }
 .log-type.tool_result { color: #22c55e; }
 .log-type.error { color: #ef4444; }
+.log-type.agent { color: #06b6d4; }
