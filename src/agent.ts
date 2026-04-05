@@ -47,6 +47,13 @@ export default defineAgent({
 
     session.on(voice.AgentSessionEventTypes.MetricsCollected, (ev) => {
       console.log('Metrics:', JSON.stringify(ev.metrics));
+      const m = ev.metrics;
+      const payload: Record<string, unknown> = { type: 'metrics' };
+      if (m.type === 'stt_metrics') payload.sttDuration = m.durationMs;
+      else if (m.type === 'llm_metrics') payload.llmDuration = m.durationMs;
+      else if (m.type === 'tts_metrics') payload.ttsDuration = m.durationMs;
+      const data = new TextEncoder().encode(JSON.stringify(payload));
+      ctx.room.localParticipant?.publishData(data, { reliable: true });
     });
 
     await session.start({ agent, room: ctx.room });
