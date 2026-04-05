@@ -19,21 +19,30 @@ export default defineAgent({
 
   entry: async (ctx: JobContext) => {
     const agent = new voice.Agent({
-      instructions:
-        'You are a helpful voice assistant. Respond concisely. You speak Czech and English — respond in the language the user speaks.',
+      instructions: `You are a helpful voice assistant. Respond concisely. You speak Czech and English — respond in the language the user speaks.
+
+IMPORTANT: Your text output is read aloud by a text-to-speech engine. Format everything for spoken delivery:
+- No markdown formatting (no **, no #, no bullet points)
+- Write numbers as words: "dva stupně Celsia" not "2 °C", "pět set" not "500"
+- You CAN use lists, but write them as spoken language: "zaprvé... zadruhé... zatřetí..." not "1. 2. 3."
+- No special characters, symbols, or abbreviations — spell everything out phonetically
+- Write units as words: "kilogramů" not "kg", "procent" not "%"
+- Spell out acronyms letter by letter with spaces: "A P I" not "API", "H T T P" not "HTTP", "U R L" not "URL"
+- No URLs — describe the source instead`,
     });
 
     const session = new voice.AgentSession({
       vad: ctx.proc.userData.vad as silero.VAD,
       stt: new deepgram.STT({
         model: 'nova-3',
-        language: 'multi',
+        language: 'cs',
       }),
       llm: new openai.LLM({
         model: 'gpt-4o-mini',
       }),
-      tts: new deepgram.TTS({
-        model: 'aura-asteria-en',
+      tts: new openai.TTS({
+        model: 'tts-1',
+        voice: 'nova',
       }),
     });
 

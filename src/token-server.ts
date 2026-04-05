@@ -33,7 +33,7 @@ app.get('/api/token', async (req, res) => {
   res.json({ token });
 });
 
-const PORT = parseInt(process.env.TOKEN_SERVER_PORT || '3000', 10);
+const PORT = parseInt(process.env.TOKEN_SERVER_PORT || '3001', 10);
 app.listen(PORT, () => {
   console.log(`Token server running at http://localhost:${PORT}`);
   console.log(`Web client at http://localhost:${PORT}/index.html`);

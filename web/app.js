@@ -11,6 +11,7 @@ const state = {
   connected: false,
   currentUserMsg: null,
   currentAssistMsg: null,
+  lastAssistMsg: null,
 };
 
 // --- UI Helpers ---
@@ -31,6 +32,7 @@ function addMessage(role, text, opts = {}) {
   if (opts.latency) meta.textContent += ` · ${opts.latency}ms`;
 
   const body = document.createElement('div');
+  body.className = 'msg-body';
   body.textContent = text;
 
   div.appendChild(meta);
@@ -43,7 +45,7 @@ function addMessage(role, text, opts = {}) {
 
 function updateMessage(el, text, opts = {}) {
   if (!el) return;
-  el.querySelector('div:last-child').textContent = text;
+  if (text != null) el.querySelector('.msg-body').textContent = text;
   if (opts.removepartial) el.classList.remove('partial');
   if (opts.latency) {
     let lat = el.querySelector('.latency');
@@ -52,7 +54,7 @@ function updateMessage(el, text, opts = {}) {
       lat.className = 'latency';
       el.appendChild(lat);
     }
-    lat.textContent = `${opts.latency}ms`;
+    lat.textContent = opts.latency;
   }
   $('#conversation').scrollTop = $('#conversation').scrollHeight;
 }
@@ -128,14 +130,15 @@ room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
   for (const seg of segments) {
     if (isAgent) {
       if (!state.currentAssistMsg) {
+        latency.stt = 0; latency.llm = 0; latency.tts = 0;
         state.currentAssistMsg = addMessage('assistant', seg.text);
         setStatus('Speaking', 'speaking');
       } else {
-        const current = state.currentAssistMsg.querySelector('div:last-child').textContent;
-        updateMessage(state.currentAssistMsg, current + seg.text);
+        updateMessage(state.currentAssistMsg, seg.text);
       }
 
       if (seg.final) {
+        state.lastAssistMsg = state.currentAssistMsg;
         state.currentAssistMsg = null;
         setStatus('Listening', 'listening');
       }
@@ -158,6 +161,18 @@ room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
 
 const latency = { stt: 0, llm: 0, tts: 0 };
 
+function updateBubbleLatency() {
+  const el = state.currentAssistMsg || state.lastAssistMsg;
+  if (!el) return;
+  const parts = [];
+  if (latency.stt > 0) parts.push(`STT ${Math.round(latency.stt)}ms`);
+  if (latency.llm > 0) parts.push(`LLM ${Math.round(latency.llm)}ms`);
+  if (latency.tts > 0) parts.push(`TTS ${Math.round(latency.tts)}ms`);
+  const total = latency.stt + latency.llm + latency.tts;
+  if (total > 0) parts.push(`= ${Math.round(total)}ms`);
+  if (parts.length > 0) updateMessage(el, null, { latency: parts.join(' · ') });
+}
+
 room.on(RoomEvent.DataReceived, (data, participant) => {
   try {
     const msg = JSON.parse(new TextDecoder().decode(data));
@@ -167,6 +182,7 @@ room.on(RoomEvent.DataReceived, (data, participant) => {
       if (msg.ttsDuration != null) { latency.tts = msg.ttsDuration; $('#lat-tts').textContent = `${Math.round(latency.tts)}ms`; }
       const total = latency.stt + latency.llm + latency.tts;
       if (total > 0) $('#lat-total').textContent = `${Math.round(total)}ms`;
+      updateBubbleLatency();
     }
   } catch (e) { console.warn('Failed to parse data message:', e); }
 });
