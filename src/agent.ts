@@ -10,7 +10,7 @@ import {
 import * as deepgram from '@livekit/agents-plugin-deepgram';
 import * as silero from '@livekit/agents-plugin-silero';
 import * as openai from '@livekit/agents-plugin-openai';
-import { ToolLLM } from './plugins/tool-llm.js';
+import { AgentLLM } from './plugins/agent-llm.js';
 import { fileURLToPath } from 'node:url';
 
 export default defineAgent({
@@ -20,34 +20,7 @@ export default defineAgent({
 
   entry: async (ctx: JobContext) => {
     const agent = new voice.Agent({
-      instructions: `You are a helpful voice assistant. Respond concisely. You speak Czech and English — respond in the language the user speaks.
-
-IMPORTANT: Your text output is read aloud by a text-to-speech engine. Format everything for spoken delivery:
-- No markdown formatting (no **, no #, no bullet points)
-- Write numbers as words: "dva stupně Celsia" not "2 °C", "pět set" not "500"
-- You CAN use lists, but write them as spoken language: "zaprvé... zadruhé... zatřetí..." not "1. 2. 3."
-- No special characters, symbols, or abbreviations — spell everything out phonetically
-- Write units as words: "kilogramů" not "kg", "procent" not "%"
-- Spell out acronyms letter by letter with spaces: "A P I" not "API", "H T T P" not "HTTP", "U R L" not "URL"
-- No URLs — describe the source instead
-
-You have access to tools: you can check the current time/date and get weather for any location. Use them when relevant.`,
-    });
-
-    const session = new voice.AgentSession({
-      vad: ctx.proc.userData.vad as silero.VAD,
-      stt: new deepgram.STT({
-        model: 'nova-3',
-        language: 'cs',
-      }),
-      llm: new ToolLLM({
-        model: 'gpt-4o-mini',
-        onEvent: sendEvent,
-      }),
-      tts: new openai.TTS({
-        model: 'tts-1',
-        voice: 'nova',
-      }),
+      instructions: '',
     });
 
     // Helper to send events to web client
@@ -55,6 +28,22 @@ You have access to tools: you can check the current time/date and get weather fo
       const data = new TextEncoder().encode(JSON.stringify(event));
       ctx.room.localParticipant?.publishData(data, { reliable: true });
     }
+
+    const session = new voice.AgentSession({
+      vad: ctx.proc.userData.vad as silero.VAD,
+      stt: new deepgram.STT({
+        model: 'nova-3',
+        language: 'cs',
+      }),
+      llm: new AgentLLM({
+        model: 'claude-sonnet-4-6',
+        onEvent: sendEvent,
+      }),
+      tts: new openai.TTS({
+        model: 'tts-1',
+        voice: 'nova',
+      }),
+    });
 
     session.on(voice.AgentSessionEventTypes.AgentStateChanged, (ev) => {
       console.log(`Agent state: ${ev.oldState} -> ${ev.newState}`);
