@@ -154,17 +154,19 @@ room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
   }
 });
 
-// --- Metrics (placeholder for Task 6) ---
+// --- Metrics ---
+
+const latency = { stt: 0, llm: 0, tts: 0 };
 
 room.on(RoomEvent.DataReceived, (data, participant) => {
   try {
     const msg = JSON.parse(new TextDecoder().decode(data));
     if (msg.type === 'metrics') {
-      if (msg.sttDuration != null) $('#lat-stt').textContent = `${Math.round(msg.sttDuration)}ms`;
-      if (msg.llmDuration != null) $('#lat-llm').textContent = `${Math.round(msg.llmDuration)}ms`;
-      if (msg.ttsDuration != null) $('#lat-tts').textContent = `${Math.round(msg.ttsDuration)}ms`;
-      const total = (msg.sttDuration || 0) + (msg.llmDuration || 0) + (msg.ttsDuration || 0);
+      if (msg.sttDuration != null) { latency.stt = msg.sttDuration; $('#lat-stt').textContent = `${Math.round(latency.stt)}ms`; }
+      if (msg.llmDuration != null) { latency.llm = msg.llmDuration; $('#lat-llm').textContent = `${Math.round(latency.llm)}ms`; }
+      if (msg.ttsDuration != null) { latency.tts = msg.ttsDuration; $('#lat-tts').textContent = `${Math.round(latency.tts)}ms`; }
+      const total = latency.stt + latency.llm + latency.tts;
       if (total > 0) $('#lat-total').textContent = `${Math.round(total)}ms`;
     }
-  } catch {}
+  } catch (e) { console.warn('Failed to parse data message:', e); }
 });
