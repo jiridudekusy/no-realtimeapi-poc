@@ -3,8 +3,8 @@ services:
     image: livekit/livekit-server
     command: --config /etc/livekit.yaml --dev
     ports:
-      - "7880:7880"
-      - "7881:7881"
+      - "127.0.0.1:7880:7880"
+      - "127.0.0.1:7881:7881"
       - "50000-50060:50000-50060/udp"
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro

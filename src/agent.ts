@@ -89,10 +89,17 @@ export default defineAgent({
 
       processing = true;
       const userText = ev.transcript.trim();
+      const chunks: string[] = [];
 
       claude.sendAndStream(userText, (sentence) => {
-        console.log(`[Agent] Say: ${sentence.slice(0, 60)}...`);
-        agentSession.say(sentence, { allowInterruptions: true, addToChatCtx: false });
+        console.log(`[Agent] Chunk: ${sentence.slice(0, 60)}...`);
+        chunks.push(sentence);
+      }).then(() => {
+        if (chunks.length > 0) {
+          const fullText = chunks.join(' ');
+          console.log(`[Agent] Say full (${fullText.length}ch): ${fullText.slice(0, 80)}...`);
+          agentSession.say(fullText, { allowInterruptions: true, addToChatCtx: false });
+        }
       }).catch((err) => {
         console.error('[Agent] Agent SDK error:', err);
         sendEvent({ type: 'agent_sdk', event: 'error', error: String(err) });

@@ -66,7 +66,10 @@ $('#connect-btn').addEventListener('click', async () => {
     const res = await fetch('/api/token?room=voice-room');
     const { token } = await res.json();
 
-    await room.connect($('#app').dataset.livekitUrl || 'ws://localhost:7880', token);
+    const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const livekitUrl = $('#app').dataset.livekitUrl || `${wsProto}://${window.location.hostname}:7880`;
+    console.log('Connecting to LiveKit:', livekitUrl);
+    await room.connect(livekitUrl, token);
 
     state.connected = true;
     setStatus('Connected', 'connected');
@@ -82,6 +85,9 @@ $('#connect-btn').addEventListener('click', async () => {
   } catch (err) {
     console.error('Connection failed:', err);
     setStatus('Error', 'disconnected');
+    const errMsg = err?.message || String(err);
+    addMessage('assistant', `Connection error: ${errMsg}`);
+    logEvent('error', `Connect failed: ${errMsg}`);
   }
 });
 
