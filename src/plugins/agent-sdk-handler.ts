@@ -96,9 +96,10 @@ export class AgentSDKHandler {
         systemPrompt: SYSTEM_INSTRUCTIONS,
         abortController: this.#abortController,
         permissionMode: 'default',
+        allowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'ToolSearch'],
         canUseTool: this.#makeCanUseTool(),
         mcpServers: {},
-        extraArgs: { 'strict-mcp-config': null }, // Ignore all user/project MCP configs
+        extraArgs: { 'strict-mcp-config': null },
         ...(this.#sessionId ? { resume: this.#sessionId } : {}),
       },
     });
