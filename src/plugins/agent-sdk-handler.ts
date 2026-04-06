@@ -28,7 +28,8 @@ const SYSTEM_INSTRUCTIONS = `You are a helpful voice assistant. Your responses w
 - Spell out acronyms letter by letter with spaces: "A P I" not "API", "H T T P" not "HTTP"
 - Avoid code blocks; describe code changes in plain language
 - You have full access to bash, file system, and the internet via curl
-- Respond in the language the user speaks (Czech or English)`;
+- Respond in the language the user speaks (Czech or English)
+- IMPORTANT: When you need to use a tool (bash, curl, file operations), ALWAYS first say a short sentence about what you are going to do BEFORE calling the tool. For example: "Podívám se na aktuální počasí." then call curl. This way the user hears feedback immediately while the tool runs.`;
 
 interface AgentSDKHandlerOptions {
   model?: string;
@@ -72,6 +73,7 @@ export class AgentSDKHandler {
   async sendAndStream(
     userText: string,
     onSentence: (sentence: string) => void,
+    onToolCall?: () => void,
   ): Promise<void> {
     // Abort previous query if still running
     if (this.#abortController) {
@@ -173,6 +175,7 @@ export class AgentSDKHandler {
               const inputStr = typeof cmd === 'string' ? cmd.slice(0, 300) : JSON.stringify(cmd).slice(0, 300);
               console.log(`[AgentSDK] Tool call: ${block.name}: ${inputStr.slice(0, 100)}`);
               this.#onEvent({ type: 'tool_call', name: block.name, input: inputStr });
+              onToolCall?.();
             }
           }
         }

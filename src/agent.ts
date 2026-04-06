@@ -89,17 +89,44 @@ export default defineAgent({
 
       processing = true;
       const userText = ev.transcript.trim();
-      const chunks: string[] = [];
+
+      // Smart buffering: collect fast sentences, flush on pause or tool call
+      let buffer: string[] = [];
+      let flushTimer: ReturnType<typeof setTimeout> | null = null;
+      let firstSentenceAt: number | null = null;
+      const COALESCE_MS = 200;  // Wait this long after each sentence for more
+      const MAX_WAIT_MS = 1500; // Max time from first buffered sentence to flush
+
+      const flush = () => {
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+        if (buffer.length === 0) return;
+        const text = buffer.join(' ');
+        buffer = [];
+        firstSentenceAt = null;
+        console.log(`[Agent] Say (${text.length}ch): ${text.slice(0, 80)}...`);
+        agentSession.say(text, { allowInterruptions: true, addToChatCtx: false });
+      };
+
+      const scheduleFlush = () => {
+        if (flushTimer) clearTimeout(flushTimer);
+        // How long since first sentence in buffer?
+        const elapsed = firstSentenceAt ? Date.now() - firstSentenceAt : 0;
+        const remaining = Math.max(0, MAX_WAIT_MS - elapsed);
+        // Flush after coalesce timeout or max wait, whichever is shorter
+        const delay = Math.min(COALESCE_MS, remaining);
+        flushTimer = setTimeout(flush, delay);
+      };
 
       claude.sendAndStream(userText, (sentence) => {
-        console.log(`[Agent] Chunk: ${sentence.slice(0, 60)}...`);
-        chunks.push(sentence);
+        if (firstSentenceAt === null) firstSentenceAt = Date.now();
+        buffer.push(sentence);
+        scheduleFlush();
+      }, () => {
+        // Tool call callback — flush immediately so user hears intent before tool runs
+        flush();
       }).then(() => {
-        if (chunks.length > 0) {
-          const fullText = chunks.join(' ');
-          console.log(`[Agent] Say full (${fullText.length}ch): ${fullText.slice(0, 80)}...`);
-          agentSession.say(fullText, { allowInterruptions: true, addToChatCtx: false });
-        }
+        // Flush any remaining buffered text
+        flush();
       }).catch((err) => {
         console.error('[Agent] Agent SDK error:', err);
         sendEvent({ type: 'agent_sdk', event: 'error', error: String(err) });
