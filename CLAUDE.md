@@ -33,5 +33,20 @@ Low-latency voice assistant built on LiveKit (open-source). Pluggable STT/TTS pi
 - v1 query() API — each turn = new query() call, clean lifecycle
 - resume: sessionId — maintains conversation history across turns
 - extraArgs: { 'strict-mcp-config': null } — skips loading user MCP servers
-- permissionMode: 'default' + canUseTool callback — allows tools but blocks dangerous patterns
+- permissionMode: 'default' + allowedTools list — canUseTool callback blocks dangerous patterns
 - query.interrupt() — Ctrl+C equivalent for barge-in
+- Container runs as non-root user `node` (required for Claude Code permissions)
+
+## Docker / LiveKit notes
+- LiveKit health check in docker-compose — agent waits for healthy server before starting
+- Each Connect creates unique room (`voice-{timestamp}`) — prevents stale room issues on reconnect
+- LiveKit ports bound to 127.0.0.1 — use Tailscale serve for remote HTTPS access
+- shutdownProcessTimeout: 3s for faster job cleanup between sessions
+- Agent has `restart: unless-stopped` for auto-recovery
+- Claude auth persisted in `claude-auth` Docker volume
+
+## Tailscale HTTPS (for remote/mobile access)
+- `tailscale serve --bg 3001` — HTTPS proxy for web client
+- `tailscale serve --bg --https 7880 7880` — HTTPS/WSS proxy for LiveKit
+- Web client auto-detects ws/wss based on page protocol
+- livekit.yaml `node_ip` must match Tailscale IP for WebRTC ICE candidates

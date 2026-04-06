@@ -51,20 +51,34 @@ docker compose logs agent -f
 
 Open **http://localhost:3001**, click **Connect**, allow microphone, and start talking.
 
+### Remote access (mobile/tablet)
+
+For HTTPS access from other devices via Tailscale:
+
+```bash
+# Expose web client
+tailscale serve --bg 3001
+
+# Expose LiveKit WebSocket
+tailscale serve --bg --https 7880 7880
+```
+
+Then update `livekit.yaml` — set `node_ip` to your Tailscale IP. Access via `https://your-hostname.ts.net`.
+
 ## Web UI features
 
 - Conversation history with live STT transcription
 - Mic toggle with visual indicator
 - Latency breakdown per response (STT / LLM / TTS)
 - Cumulative cost tracking (tokens, characters, estimated USD)
-- Server event log (state changes, tool calls, metrics, errors)
-- Copy log to clipboard
+- Server event log (state changes, tool calls, metrics, errors) with copy button
+- Connection error display in chat
 
 ## Project structure
 
 ```
-├── Dockerfile                # Agent worker container
-├── docker-compose.yml        # LiveKit server + agent
+├── Dockerfile                # Agent worker container (non-root, Claude Code CLI)
+├── docker-compose.yml        # LiveKit server (with health check) + agent
 ├── livekit.yaml              # LiveKit config
 ├── src/
 │   ├── agent.ts              # LiveKit agent — STT events → Claude → say()
@@ -88,15 +102,25 @@ The key insight: LiveKit pipeline handles only **VAD + STT + TTS** (no LLM plugi
 4. Response sentences are fed back via `agentSession.say()`
 5. LiveKit TTS converts to audio and sends via WebRTC
 
-Session persistence via `resume: sessionId` — Claude remembers the full conversation.
+Each Connect creates a unique room (`voice-{timestamp}`) for clean agent dispatch. Session persistence via `resume: sessionId` — Claude remembers the full conversation within a session.
 
 ## Claude Agent SDK integration
 
 - **v1 `query()` API** — each turn = clean query call with `abortController`
 - **`resume: sessionId`** — conversation history persists across turns
 - **`query.interrupt()`** — barge-in support (Ctrl+C equivalent)
-- **`canUseTool` callback** — logs and controls tool permissions
+- **`permissionMode: 'default'`** + `allowedTools` — explicit tool whitelist
+- **`canUseTool` callback** — logs tool usage, blocks dangerous patterns (rm -rf, sudo, etc.)
 - **`--strict-mcp-config`** — skips loading user's MCP servers for faster startup
+- **Non-root Docker** — container runs as `node` user (required for Claude Code permissions)
+
+## Docker notes
+
+- LiveKit health check ensures agent starts only after server is ready
+- Agent has `restart: unless-stopped` for auto-recovery
+- Claude auth persisted in `claude-auth` Docker volume (login once)
+- Source dirs mounted as volumes for live editing (`src/`, `web/`)
+- LiveKit ports bound to `127.0.0.1` to avoid conflicts with Tailscale serve
 
 ## License
 
