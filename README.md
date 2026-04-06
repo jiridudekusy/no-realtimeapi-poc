@@ -99,20 +99,27 @@ The key insight: LiveKit pipeline handles only **VAD + STT + TTS** (no LLM plugi
 1. `UserInputTranscribed` event fires with STT text
 2. Text is sent to Claude Agent SDK via `query()` API
 3. Claude responds (possibly using tools — bash, files, curl)
-4. Response sentences are fed back via `agentSession.say()`
+4. Response text is buffered (200ms coalesce, 1.5s max) and fed via `agentSession.say()`
 5. LiveKit TTS converts to audio and sends via WebRTC
 
+When Claude needs to use a tool, it first announces what it will do (e.g., "Podívám se na počasí"), which gets flushed to TTS immediately on tool call. The user hears feedback while the tool executes.
+
 Each Connect creates a unique room (`voice-{timestamp}`) for clean agent dispatch. Session persistence via `resume: sessionId` — Claude remembers the full conversation within a session.
+
+## Security
+
+- **Permission model**: `permissionMode: 'default'` with layered controls
+- **Safe tools auto-approved**: Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, ToolSearch
+- **Bash filtered**: Every Bash command goes through `canUseTool` callback
+- **Blocked patterns**: `rm -rf`, `sudo`, `mkfs`, `dd if=`, `>/dev/`, `chmod 777`, `curl|bash`, `wget|bash`
+- **Container isolation**: Agent runs in Docker as non-root user `node`
 
 ## Claude Agent SDK integration
 
 - **v1 `query()` API** — each turn = clean query call with `abortController`
 - **`resume: sessionId`** — conversation history persists across turns
 - **`query.interrupt()`** — barge-in support (Ctrl+C equivalent)
-- **`permissionMode: 'default'`** + `allowedTools` — explicit tool whitelist
-- **`canUseTool` callback** — logs tool usage, blocks dangerous patterns (rm -rf, sudo, etc.)
 - **`--strict-mcp-config`** — skips loading user's MCP servers for faster startup
-- **Non-root Docker** — container runs as `node` user (required for Claude Code permissions)
 
 ## Docker notes
 
@@ -121,6 +128,7 @@ Each Connect creates a unique room (`voice-{timestamp}`) for clean agent dispatc
 - Claude auth persisted in `claude-auth` Docker volume (login once)
 - Source dirs mounted as volumes for live editing (`src/`, `web/`)
 - LiveKit ports bound to `127.0.0.1` to avoid conflicts with Tailscale serve
+- `shutdownProcessTimeout: 3s` for faster job cleanup between sessions
 
 ## License
 

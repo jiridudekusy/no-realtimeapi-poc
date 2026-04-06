@@ -2,6 +2,8 @@
 
 Low-latency voice assistant built on LiveKit (open-source). Pluggable STT/TTS pipeline with Claude Agent SDK.
 
+**Keep CLAUDE.md and README.md up to date** — when architecture, commands, config, or behavior changes, update both files as part of the commit.
+
 ## Stack
 - TypeScript, Node.js (ESM), Express v5
 - LiveKit Agents SDK v1.x (`@livekit/agents`) — VAD, STT, TTS only (no LLM plugin)
@@ -23,18 +25,25 @@ Low-latency voice assistant built on LiveKit (open-source). Pluggable STT/TTS pi
 - Deepgram STT with `language: 'multi'` is unreliable for Czech — use `language: 'cs'`
 
 ## Architecture
-- LiveKit pipeline: VAD → STT → (no LLM) → TTS. LLM step handled outside pipeline.
+- LiveKit pipeline: VAD → STT → (no LLM) → TTS. LLM step handled outside pipeline via say().
 - `src/agent.ts` — LiveKit agent, listens for UserInputTranscribed, sends to AgentSDKHandler, calls session.say() for TTS
 - `src/token-server.ts` — Express server (JWT tokens + static files from web/)
 - `src/plugins/agent-sdk-handler.ts` — Wraps Claude Agent SDK v1 query() API with resume, interrupt, sentence splitting
 - `web/` — Vanilla HTML/JS client with livekit-client from CDN
+- Smart TTS buffering: 200ms coalesce window (max 1.5s), immediate flush on tool calls
 
 ## Claude Agent SDK notes
 - v1 query() API — each turn = new query() call, clean lifecycle
 - resume: sessionId — maintains conversation history across turns
 - extraArgs: { 'strict-mcp-config': null } — skips loading user MCP servers
-- permissionMode: 'default' + allowedTools list — canUseTool callback blocks dangerous patterns
+- System prompt instructs Claude to announce actions before tool calls
 - query.interrupt() — Ctrl+C equivalent for barge-in
+
+## Permissions
+- permissionMode: 'default' — tools go through permission chain
+- allowedTools: Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, ToolSearch — auto-approved (step 4)
+- Bash NOT in allowedTools — goes through canUseTool callback (step 5)
+- canUseTool blocks dangerous patterns: rm -rf, sudo, mkfs, dd if=, >/dev/, chmod 777, curl|bash, wget|bash
 - Container runs as non-root user `node` (required for Claude Code permissions)
 
 ## Docker / LiveKit notes
