@@ -12,8 +12,9 @@ const webDir = path.resolve(__dirname, '..', 'web');
 app.use(express.static(webDir));
 
 app.get('/api/token', async (req, res) => {
-  const room = (req.query.room as string) || 'voice-room';
+  const room = (req.query.room as string) || `voice-${Date.now()}`;
   const identity = (req.query.identity as string) || `user-${Date.now()}`;
+  console.log(`Token requested: room=${room}, identity=${identity}`);
 
   const at = new AccessToken(
     process.env.LIVEKIT_API_KEY!,

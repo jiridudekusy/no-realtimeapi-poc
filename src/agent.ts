@@ -114,4 +114,7 @@ export default defineAgent({
   },
 });
 
-cli.runApp(new WorkerOptions({ agent: fileURLToPath(import.meta.url) }));
+cli.runApp(new WorkerOptions({
+  agent: fileURLToPath(import.meta.url),
+  shutdownProcessTimeout: 3, // Fast cleanup so reconnect works quickly (default 10s)
+}));

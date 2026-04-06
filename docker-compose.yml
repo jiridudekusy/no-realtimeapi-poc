@@ -8,6 +8,12 @@ services:
       - "50000-50060:50000-50060/udp"
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:7880"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
 
   agent:
     build: .
@@ -21,7 +27,9 @@ services:
       - ./src:/app/src
       - ./web:/app/web
     depends_on:
-      - livekit
+      livekit:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   claude-auth:

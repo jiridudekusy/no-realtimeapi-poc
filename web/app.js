@@ -63,7 +63,7 @@ function updateMessage(el, text, opts = {}) {
 
 $('#connect-btn').addEventListener('click', async () => {
   try {
-    const res = await fetch('/api/token?room=voice-room');
+    const res = await fetch('/api/token');
     const { token } = await res.json();
 
     const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
