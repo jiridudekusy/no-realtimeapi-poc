@@ -98,7 +98,8 @@ export class AgentSDKHandler {
         systemPrompt: SYSTEM_INSTRUCTIONS,
         abortController: this.#abortController,
         permissionMode: 'default',
-        allowedTools: ['Bash', 'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'ToolSearch'],
+        allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'ToolSearch'],
+        // Bash NOT in allowedTools — goes through canUseTool for dangerous pattern check
         canUseTool: this.#makeCanUseTool(),
         mcpServers: {},
         extraArgs: { 'strict-mcp-config': null },
