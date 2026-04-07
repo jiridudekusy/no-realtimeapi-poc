@@ -96,26 +96,23 @@ To use the voice assistant from a phone, tablet, or another computer on your net
 sudo tailscale set --hostname=voice-assistant
 ```
 
-### 2. Find your Tailscale IP
+### 2. Set LiveKit node IP to your Tailscale IP
+
+LiveKit needs to advertise your Tailscale IP so remote devices can establish WebRTC connections.
 
 ```bash
+# Find your Tailscale IP
 tailscale ip -4
 # e.g. 100.77.2.54
-```
 
-### 3. Configure LiveKit to advertise your Tailscale IP
+# Add it to .env
+echo "LIVEKIT_NODE_IP=100.77.2.54" >> .env
 
-Add to your `.env`:
-
-```env
-LIVEKIT_NODE_IP=100.77.2.54
-```
-
-Then restart LiveKit:
-
-```bash
+# Restart to apply
 docker compose -f docker-compose.prod.yml restart livekit
 ```
+
+If you skip this, LiveKit defaults to `127.0.0.1` which only works from localhost.
 
 ### 4. Expose ports via Tailscale serve
 
