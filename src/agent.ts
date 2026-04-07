@@ -69,26 +69,40 @@ export default defineAgent({
       claude.close();
     });
 
+    // --- LLM Hold: buffer transcripts until released ---
+
+    let llmHeld = false;
+    let heldTranscripts: string[] = [];
+
+    // Listen for hold/release data messages from web client
+    ctx.room.on('dataReceived', (data: Uint8Array) => {
+      try {
+        const msg = JSON.parse(new TextDecoder().decode(data));
+        if (msg.type === 'llm_hold') {
+          llmHeld = msg.held;
+          console.log(`[Agent] LLM hold: ${llmHeld ? 'ON' : 'OFF'}`);
+          if (!llmHeld && heldTranscripts.length > 0) {
+            // Release — send all buffered transcripts as one message
+            const combined = heldTranscripts.join(' ');
+            heldTranscripts = [];
+            console.log(`[Agent] Releasing held transcripts: ${combined.slice(0, 80)}...`);
+            processUserText(combined);
+          }
+        }
+      } catch {}
+    });
+
     // --- Core: STT transcript → Agent SDK → TTS via say() ---
 
     let processing = false;
 
-    agentSession.on(voice.AgentSessionEventTypes.UserInputTranscribed, (ev) => {
-      console.log(`User (final=${ev.isFinal}): ${ev.transcript}`);
-      if (ev.isFinal) {
-        sendEvent({ type: 'stt', transcript: ev.transcript });
-      }
-
-      if (!ev.isFinal || !ev.transcript.trim()) return;
-
+    function processUserText(userText: string) {
       // If we're already processing, abort previous (barge-in)
       if (processing) {
         console.log('[Agent] Barge-in detected, interrupting previous response');
         claude.interrupt();
       }
-
       processing = true;
-      const userText = ev.transcript.trim();
 
       // Smart buffering: collect fast sentences, flush on pause or tool call
       let buffer: string[] = [];
@@ -133,6 +147,24 @@ export default defineAgent({
       }).finally(() => {
         processing = false;
       });
+    }
+
+    agentSession.on(voice.AgentSessionEventTypes.UserInputTranscribed, (ev) => {
+      console.log(`User (final=${ev.isFinal}): ${ev.transcript}`);
+      if (ev.isFinal) {
+        sendEvent({ type: 'stt', transcript: ev.transcript });
+      }
+
+      if (!ev.isFinal || !ev.transcript.trim()) return;
+
+      if (llmHeld) {
+        // Buffer transcript while held
+        heldTranscripts.push(ev.transcript.trim());
+        console.log(`[Agent] Held transcript (${heldTranscripts.length}): ${ev.transcript.trim()}`);
+        return;
+      }
+
+      processUserText(ev.transcript.trim());
     });
 
     // Start pipeline and wait for user

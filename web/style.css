@@ -125,6 +125,9 @@ header h1 { font-size: 1.2rem; }
 #connect-btn:disabled { opacity: 0.4; cursor: default; }
 #disconnect-btn { background: rgba(239,68,68,0.2); color: #f87171; }
 #disconnect-btn:disabled { opacity: 0.4; cursor: default; }
+.hold-btn { background: rgba(16,185,129,0.2); color: #10b981; }
+.hold-btn:disabled { opacity: 0.4; cursor: default; }
+.hold-btn.held { background: rgba(245,158,11,0.2); color: #f59e0b; }
 
 #latency-bar {
   display: flex;
@@ -203,3 +206,62 @@ header h1 { font-size: 1.2rem; }
 .log-type.agent { color: #06b6d4; }
 .log-type.llm_send { color: #f97316; }
 .log-type.llm_recv { color: #a3e635; }
+
+.theme-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+/* Light mode styles */
+body.light { background: #f5f5f5; color: #1a1a1a; }
+body.light .theme-btn { border-color: #ccc; }
+body.light .mic-btn { border-color: #ccc; background: #fff; }
+body.light .mic-btn.active { border-color: #ef4444; background: rgba(239,68,68,0.1); }
+body.light #mic-label { color: #666; }
+body.light #conversation { background: #fff; border-color: #e0e0e0; }
+body.light .msg.user { background: rgba(37,99,235,0.1); color: #1d4ed8; }
+body.light .msg.user.partial { border-color: rgba(59,130,246,0.3); }
+body.light .msg.assistant { background: #f0f0f0; color: #333; }
+body.light .msg .meta { color: #999; }
+body.light .msg .latency { color: #888; }
+body.light #latency-bar { color: #999; }
+body.light #latency-bar strong { color: #555; }
+body.light #cost-bar { color: #999; }
+body.light .server-status.checking { background: rgba(0,0,0,0.05); }
+body.light #event-log-details { border-color: #e0e0e0; background: #fff; }
+body.light #event-log-details summary { color: #666; }
+body.light #copy-log-btn { background: #f0f0f0; border-color: #ddd; color: #666; }
+body.light #copy-log-btn:hover { background: #e5e5e5; color: #333; }
+body.light .log-entry { border-bottom-color: #eee; }
+body.light .log-time { color: #aaa; }
+body.light .log-body { color: #555; }
+
+/* Auto light mode from system preference */
+@media (prefers-color-scheme: light) {
+  body:not(.dark) { background: #f5f5f5; color: #1a1a1a; }
+  body:not(.dark) .theme-btn { border-color: #ccc; }
+  body:not(.dark) .mic-btn { border-color: #ccc; background: #fff; }
+  body:not(.dark) .mic-btn.active { border-color: #ef4444; background: rgba(239,68,68,0.1); }
+  body:not(.dark) #mic-label { color: #666; }
+  body:not(.dark) #conversation { background: #fff; border-color: #e0e0e0; }
+  body:not(.dark) .msg.user { background: rgba(37,99,235,0.1); color: #1d4ed8; }
+  body:not(.dark) .msg.user.partial { border-color: rgba(59,130,246,0.3); }
+  body:not(.dark) .msg.assistant { background: #f0f0f0; color: #333; }
+  body:not(.dark) .msg .meta { color: #999; }
+  body:not(.dark) .msg .latency { color: #888; }
+  body:not(.dark) #latency-bar { color: #999; }
+  body:not(.dark) #latency-bar strong { color: #555; }
+  body:not(.dark) #cost-bar { color: #999; }
+  body:not(.dark) .server-status.checking { background: rgba(0,0,0,0.05); }
+  body:not(.dark) #event-log-details { border-color: #e0e0e0; background: #fff; }
+  body:not(.dark) #event-log-details summary { color: #666; }
+  body:not(.dark) #copy-log-btn { background: #f0f0f0; border-color: #ddd; color: #666; }
+  body:not(.dark) #copy-log-btn:hover { background: #e5e5e5; color: #333; }
+  body:not(.dark) .log-entry { border-bottom-color: #eee; }
+  body:not(.dark) .log-time { color: #aaa; }
+  body:not(.dark) .log-body { color: #555; }
+}

@@ -27,6 +27,33 @@ async function checkServerHealth() {
 checkServerHealth();
 setInterval(checkServerHealth, 10000);
 
+// --- Theme toggle ---
+function initTheme() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light') document.body.classList.add('light');
+  else if (saved === 'dark') document.body.classList.add('dark');
+  updateThemeBtn();
+}
+function updateThemeBtn() {
+  const isLight = document.body.classList.contains('light') ||
+    (!document.body.classList.contains('dark') && window.matchMedia('(prefers-color-scheme: light)').matches);
+  $('#theme-btn').textContent = isLight ? '🌙' : '☀️';
+}
+$('#theme-btn').addEventListener('click', () => {
+  const isCurrentlyLight = document.body.classList.contains('light') ||
+    (!document.body.classList.contains('dark') && window.matchMedia('(prefers-color-scheme: light)').matches);
+  document.body.classList.remove('light', 'dark');
+  if (isCurrentlyLight) {
+    document.body.classList.add('dark');
+    localStorage.setItem('theme', 'dark');
+  } else {
+    document.body.classList.add('light');
+    localStorage.setItem('theme', 'light');
+  }
+  updateThemeBtn();
+});
+initTheme();
+
 const state = {
   connected: false,
   currentUserMsg: null,
@@ -96,6 +123,7 @@ $('#connect-btn').addEventListener('click', async () => {
     $('#connect-btn').disabled = true;
     $('#disconnect-btn').disabled = false;
     $('#mic-btn').disabled = false;
+    $('#hold-btn').disabled = false;
     $('#mic-label').textContent = 'Click to toggle microphone';
 
     await room.localParticipant.setMicrophoneEnabled(true);
@@ -113,6 +141,35 @@ $('#connect-btn').addEventListener('click', async () => {
 
 $('#disconnect-btn').addEventListener('click', () => {
   room.disconnect();
+});
+
+// --- LLM Hold ---
+let llmHeld = false;
+
+$('#hold-btn').addEventListener('click', () => {
+  if (!state.connected) return;
+
+  if (!llmHeld) {
+    // Switch to Hold mode
+    llmHeld = true;
+    $('#hold-btn').textContent = 'LLM: Send';
+    $('#hold-btn').classList.add('held');
+    room.localParticipant.publishData(
+      new TextEncoder().encode(JSON.stringify({ type: 'llm_hold', held: true })),
+      { reliable: true }
+    );
+    logEvent('agent', 'LLM hold ON — transcripts buffered');
+  } else {
+    // Release — send buffered transcripts
+    llmHeld = false;
+    $('#hold-btn').textContent = 'LLM: Auto';
+    $('#hold-btn').classList.remove('held');
+    room.localParticipant.publishData(
+      new TextEncoder().encode(JSON.stringify({ type: 'llm_hold', held: false })),
+      { reliable: true }
+    );
+    logEvent('agent', 'LLM hold OFF — sending to Claude');
+  }
 });
 
 $('#mic-btn').addEventListener('click', async () => {
@@ -134,6 +191,10 @@ room.on(RoomEvent.Disconnected, () => {
   $('#mic-btn').disabled = true;
   $('#mic-btn').classList.remove('active');
   $('#mic-label').textContent = 'Connect to start';
+  $('#hold-btn').disabled = true;
+  $('#hold-btn').textContent = 'LLM: Auto';
+  $('#hold-btn').classList.remove('held');
+  llmHeld = false;
 });
 
 room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
