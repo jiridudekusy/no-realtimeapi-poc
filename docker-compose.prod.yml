@@ -8,13 +8,15 @@
 services:
   livekit:
     image: livekit/livekit-server
-    command: --config /etc/livekit.yaml --dev
+    entrypoint: ["sh", "-c", "sed s/NODE_IP_PLACEHOLDER/$LIVEKIT_NODE_IP/ /etc/livekit.yaml.template > /tmp/livekit.yaml && exec /livekit-server --config /tmp/livekit.yaml --dev"]
+    environment:
+      - LIVEKIT_NODE_IP=${LIVEKIT_NODE_IP:-127.0.0.1}
     ports:
       - "127.0.0.1:7880:7880"
       - "127.0.0.1:7881:7881"
       - "127.0.0.1:50000-50060:50000-50060/udp"
     volumes:
-      - ./livekit.yaml:/etc/livekit.yaml:ro
+      - ./livekit.yaml.template:/etc/livekit.yaml.template:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:7880"]

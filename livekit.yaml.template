@@ -6,7 +6,7 @@ rtc:
   port_range_start: 50000
   port_range_end: 50060
   use_external_ip: false
-  node_ip: 100.77.2.54
+  node_ip: NODE_IP_PLACEHOLDER
 
 keys:
   devkey: secret
