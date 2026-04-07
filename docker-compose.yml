@@ -8,6 +8,7 @@ services:
       - "50000-50060:50000-50060/udp"
     volumes:
       - ./livekit.yaml:/etc/livekit.yaml:ro
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:7880"]
       interval: 3s

@@ -34,6 +34,21 @@ app.get('/api/token', async (req, res) => {
   res.json({ token });
 });
 
+app.get('/api/health', async (_req, res) => {
+  try {
+    // Check if LiveKit is reachable by creating a test token
+    const at = new AccessToken(
+      process.env.LIVEKIT_API_KEY!,
+      process.env.LIVEKIT_API_SECRET!,
+      { identity: 'health-check', ttl: '10s' },
+    );
+    await at.toJwt();
+    res.json({ status: 'ok', livekit: process.env.LIVEKIT_URL || 'unknown' });
+  } catch (err) {
+    res.status(503).json({ status: 'error', error: String(err) });
+  }
+});
+
 const PORT = parseInt(process.env.TOKEN_SERVER_PORT || '3001', 10);
 app.listen(PORT, () => {
   console.log(`Token server running at http://localhost:${PORT}`);

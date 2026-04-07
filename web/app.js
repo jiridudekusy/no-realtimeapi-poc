@@ -7,6 +7,26 @@ import {
 const $ = (sel) => document.querySelector(sel);
 const room = new Room({ adaptiveStream: true, dynacast: true });
 
+// --- Server health check ---
+async function checkServerHealth() {
+  const el = $('#server-status');
+  try {
+    const res = await fetch('/api/health');
+    if (res.ok) {
+      el.textContent = 'Server: OK';
+      el.className = 'server-status ok';
+    } else {
+      el.textContent = 'Server: Error';
+      el.className = 'server-status error';
+    }
+  } catch {
+    el.textContent = 'Server: Offline';
+    el.className = 'server-status error';
+  }
+}
+checkServerHealth();
+setInterval(checkServerHealth, 10000);
+
 const state = {
   connected: false,
   currentUserMsg: null,

@@ -144,4 +144,5 @@ export default defineAgent({
 cli.runApp(new WorkerOptions({
   agent: fileURLToPath(import.meta.url),
   shutdownProcessTimeout: 3, // Fast cleanup so reconnect works quickly (default 10s)
+  maxRetry: 999999, // Retry connecting to LiveKit effectively forever
 }));

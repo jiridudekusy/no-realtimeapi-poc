@@ -26,6 +26,11 @@ header {
 
 header h1 { font-size: 1.2rem; }
 
+.server-status { font-size: 0.75rem; padding: 0.2rem 0.5rem; border-radius: 4px; }
+.server-status.ok { color: #10b981; background: rgba(16,185,129,0.1); }
+.server-status.error { color: #ef4444; background: rgba(239,68,68,0.1); }
+.server-status.checking { color: #888; background: rgba(255,255,255,0.05); }
+
 .status { font-size: 0.85rem; }
 .status.disconnected { color: #888; }
 .status.connected { color: #10b981; }
