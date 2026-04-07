@@ -10,7 +10,8 @@ Low-latency voice assistant built on [LiveKit](https://livekit.io/) (open-source
 Browser (WebRTC) ──► LiveKit Server (SFU) ──► Agent Worker (Node.js)
                  ◄──                       ◄──
 
-Pipeline: Silero VAD → Deepgram STT → Claude Agent SDK → OpenAI TTS
+Voice:  Silero VAD → Deepgram STT → Claude Agent SDK → OpenAI TTS
+Text:   HTTP POST /api/chat → Claude Agent SDK → SSE response
 ```
 
 - **STT**: Deepgram Nova-3 (streaming, Czech)
@@ -19,6 +20,8 @@ Pipeline: Silero VAD → Deepgram STT → Claude Agent SDK → OpenAI TTS
 - **VAD**: Silero (voice activity detection)
 
 LiveKit handles WebRTC transport, VAD, STT, and TTS. The LLM step runs outside the LiveKit pipeline — STT transcripts go to Claude Agent SDK, responses come back via `session.say()`.
+
+**Dual input**: voice and text share the same session. Say something, then type a follow-up — Claude remembers both. Text input works without voice connection (no Connect needed).
 
 ## Quick start
 
@@ -73,7 +76,7 @@ Follow the prompts to authenticate with your Claude subscription.
 
 ### 4. Use it
 
-Open **http://localhost:3001**, click **Connect**, allow microphone, and start talking.
+Open **http://localhost:3001** — you can start typing immediately (no connection needed) or click **Connect** for voice mode.
 
 To check logs:
 
@@ -143,28 +146,36 @@ The web client automatically detects HTTPS and uses `wss://` for the LiveKit con
 
 ## Web UI features
 
-- Conversation history with live STT transcription
-- Mic toggle with visual indicator
-- Latency breakdown per response (STT / LLM / TTS)
-- Cumulative cost tracking (tokens, characters, estimated USD)
-- Server event log (state changes, tool calls, metrics, errors) with copy button
-- Connection error display in chat
+- **Dual input**: type text or use voice — both share the same conversation context
+- **Session history**: sidebar with all past conversations, fulltext search, read-only transcript view
+- **Session resume**: click Resume on any past session to continue with full Claude context
+- **Session naming**: editable names with ✨ AI auto-generation from conversation content
+- **Voice controls**: mic toggle, Connect/Disconnect, LLM Hold (buffer transcripts)
+- **Latency tracking**: STT / LLM / TTS breakdown in toolbar
+- **Cost tracking**: tokens and estimated USD
+- **Server event log**: state changes, tool calls, metrics, errors (collapsible)
+- **Responsive**: sidebar as hamburger overlay on mobile (≤640px)
+- **Light/dark theme**: toggle or follows system preference
 
 ## Project structure
 
 ```
 ├── Dockerfile                # Agent worker container (non-root, Claude Code CLI)
-├── docker-compose.yml        # LiveKit server (with health check) + agent
-├── livekit.yaml              # LiveKit config
+├── docker-compose.yml        # Dev: LiveKit server + agent (source mounted)
+├── docker-compose.prod.yml   # Prod: pulls pre-built image
+├── livekit.yaml.template     # LiveKit config template
 ├── src/
-│   ├── agent.ts              # LiveKit agent — STT events → Claude → say()
-│   ├── token-server.ts       # Express: JWT tokens + static files
+│   ├── agent.ts              # LiveKit agent — voice only (STT → Claude → TTS)
+│   ├── token-server.ts       # Express: JWT tokens, static files, session API, text chat
+│   ├── session-store.ts      # Session persistence (JSON files, index, search)
 │   └── plugins/
-│       └── agent-sdk-handler.ts  # Claude Agent SDK wrapper (query API + resume)
+│       └── agent-sdk-handler.ts  # Claude Agent SDK wrapper (query + resume + callbacks)
 ├── web/
-│   ├── index.html            # Web client
-│   ├── style.css
-│   └── app.js                # LiveKit client + UI logic
+│   ├── index.html            # Web client (sidebar + chat + toolbar)
+│   ├── style.css             # Full-viewport layout, responsive, light/dark
+│   ├── app.js                # LiveKit client, text chat, session management
+│   └── favicon.png           # App icon
+├── data/sessions/            # Session storage (Docker volume in prod)
 └── .env.example              # Environment template
 ```
 
@@ -172,15 +183,23 @@ The web client automatically detects HTTPS and uses `wss://` for the LiveKit con
 
 The key insight: LiveKit pipeline handles only **VAD + STT + TTS** (no LLM plugin). The LLM step is handled outside the pipeline:
 
-1. `UserInputTranscribed` event fires with STT text
-2. Text is sent to Claude Agent SDK via `query()` API
-3. Claude responds (possibly using tools — bash, files, curl)
-4. Response text is buffered (200ms coalesce, 1.5s max) and fed via `agentSession.say()`
-5. LiveKit TTS converts to audio and sends via WebRTC
+### Voice path
+1. `UserInputTranscribed` events fire with STT text
+2. Transcripts coalesced (2s debounce — partials reset timer) into one message
+3. Text sent to Claude Agent SDK via `query()` API
+4. Claude responds (possibly using tools — bash, files, curl)
+5. Response buffered (200ms coalesce, 1.5s max) and fed via `agentSession.say()`
+6. LiveKit TTS converts to audio and sends via WebRTC
 
-When Claude needs to use a tool, it first announces what it will do (e.g., "Podívám se na počasí"), which gets flushed to TTS immediately on tool call. The user hears feedback while the tool executes.
+### Text path
+1. User types message → `POST /api/chat` with SSE streaming
+2. Token server creates `AgentSDKHandler`, sends to Claude via `query()`
+3. Sentences stream back as SSE events, displayed in chat
+4. No LiveKit connection needed
 
-Each Connect creates a unique room (`voice-{timestamp}`) for clean agent dispatch. Session persistence via `resume: sessionId` — Claude remembers the full conversation within a session.
+Both paths share sessions via `claudeSessionId` — switching between voice and text preserves full conversation context.
+
+When Claude needs to use a tool, it first announces what it will do (e.g., "Podívám se na počasí"), which gets flushed to TTS immediately. The user hears feedback while the tool executes.
 
 ## Security
 
@@ -196,15 +215,22 @@ Each Connect creates a unique room (`voice-{timestamp}`) for clean agent dispatc
 - **`resume: sessionId`** — conversation history persists across turns
 - **`query.interrupt()`** — barge-in support (Ctrl+C equivalent)
 - **`--strict-mcp-config`** — skips loading user's MCP servers for faster startup
+- All LLM calls go through Agent SDK (included in Claude subscription)
 
 ## Docker notes
 
 - LiveKit health check ensures agent starts only after server is ready
 - Agent has `restart: unless-stopped` for auto-recovery
 - Claude auth persisted in `claude-auth` Docker volume (login once)
-- Source dirs mounted as volumes for live editing (`src/`, `web/`)
+- Session data persisted in `session-data` Docker volume
+- Source dirs mounted as volumes for live editing (`src/`, `web/`) — restart, don't rebuild
 - LiveKit ports bound to `127.0.0.1` to avoid conflicts with Tailscale serve
+- VAD `minSilenceDuration: 1.5s` for natural Czech speech
 - `shutdownProcessTimeout: 3s` for faster job cleanup between sessions
+
+## Release notes
+
+See [CHANGELOG.md](CHANGELOG.md) for what's new in each version.
 
 ## License
 
