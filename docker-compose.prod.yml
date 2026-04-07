@@ -8,9 +8,9 @@
 services:
   livekit:
     image: livekit/livekit-server
-    entrypoint: ["sh", "-c", "sed s/NODE_IP_PLACEHOLDER/$LIVEKIT_NODE_IP/ /etc/livekit.yaml.template > /tmp/livekit.yaml && exec /livekit-server --config /tmp/livekit.yaml --dev"]
+    entrypoint: ["sh", "-c", "IP=$${LIVEKIT_NODE_IP:-127.0.0.1} && sed s/NODE_IP_PLACEHOLDER/$$IP/ /etc/livekit.yaml.template > /tmp/livekit.yaml && exec /livekit-server --config /tmp/livekit.yaml --dev"]
     environment:
-      - LIVEKIT_NODE_IP=${LIVEKIT_NODE_IP:-127.0.0.1}
+      - LIVEKIT_NODE_IP
     ports:
       - "127.0.0.1:7880:7880"
       - "127.0.0.1:7881:7881"
