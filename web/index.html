@@ -10,7 +10,10 @@
   <div id="app">
     <header>
       <h1>Voice Assistant</h1>
-      <span id="status" class="status disconnected">● Disconnected</span>
+      <div style="display: flex; align-items: center; gap: 0.8rem;">
+        <span id="server-status" class="server-status checking">Server: ...</span>
+        <span id="status" class="status disconnected">● Disconnected</span>
+      </div>
     </header>
 
     <div id="mic-section">
@@ -39,7 +42,7 @@
     </div>
 
     <details id="event-log-details" open>
-      <summary>Server Events</summary>
+      <summary>Server Events <button id="copy-log-btn">Copy</button></summary>
       <div id="event-log"></div>
     </details>
   </div>

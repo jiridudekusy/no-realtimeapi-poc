@@ -1,3 +1,10 @@
+# Production docker-compose — pulls pre-built image from GitHub Container Registry
+# Usage:
+#   1. cp .env.example .env && edit .env with your API keys
+#   2. docker compose -f docker-compose.prod.yml up -d
+#   3. docker compose -f docker-compose.prod.yml exec agent claude login
+#   4. Open http://localhost:3001
+
 services:
   livekit:
     image: livekit/livekit-server
@@ -17,7 +24,7 @@ services:
       start_period: 5s
 
   agent:
-    build: .
+    image: ghcr.io/jiridudekusy/no-realtimeapi-poc:latest
     env_file: .env
     ports:
       - "127.0.0.1:3001:3001"
@@ -25,8 +32,6 @@ services:
       - LIVEKIT_URL=ws://livekit:7880
     volumes:
       - claude-auth:/home/node/.claude
-      - ./src:/app/src
-      - ./web:/app/web
     depends_on:
       livekit:
         condition: service_healthy
