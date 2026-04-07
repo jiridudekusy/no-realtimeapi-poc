@@ -24,46 +24,116 @@ LiveKit handles WebRTC transport, VAD, STT, and TTS. The LLM step runs outside t
 
 ### Prerequisites
 
-- Docker
-- API keys: [Deepgram](https://console.deepgram.com), [OpenAI](https://platform.openai.com)
-- Claude subscription (for Agent SDK)
+- Docker and Docker Compose
+- API keys: [Deepgram](https://console.deepgram.com) (STT), [OpenAI](https://platform.openai.com) (TTS)
+- Claude subscription — the agent uses [Claude Agent SDK](https://docs.anthropic.com/en/docs/claude-code/sdk) which authenticates via `claude login`
 
-### Setup
+### 1. Configure
 
 ```bash
-# Clone
 git clone https://github.com/jiridudekusy/no-realtimeapi-poc.git
 cd no-realtimeapi-poc
-
-# Configure
 cp .env.example .env
-# Edit .env — add your Deepgram and OpenAI API keys
-
-# Build and start everything
-docker compose up -d --build
-
-# Login to Claude (once — persisted in Docker volume)
-docker compose exec agent claude login
-
-# Follow logs
-docker compose logs agent -f
 ```
+
+Edit `.env` and fill in your API keys:
+
+```env
+DEEPGRAM_API_KEY=your-deepgram-key
+OPENAI_API_KEY=your-openai-key
+```
+
+### 2. Start
+
+Using the pre-built image (recommended):
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Or build from source:
+
+```bash
+docker compose up -d --build
+```
+
+### 3. Login to Claude
+
+This only needs to be done once — credentials are persisted in a Docker volume.
+
+```bash
+# For pre-built image:
+docker compose -f docker-compose.prod.yml exec agent claude login
+
+# For source build:
+docker compose exec agent claude login
+```
+
+Follow the prompts to authenticate with your Claude subscription.
+
+### 4. Use it
 
 Open **http://localhost:3001**, click **Connect**, allow microphone, and start talking.
 
-### Remote access (mobile/tablet)
-
-For HTTPS access from other devices via Tailscale:
+To check logs:
 
 ```bash
-# Expose web client
+docker compose -f docker-compose.prod.yml logs agent -f
+```
+
+## Remote access via Tailscale
+
+To use the voice assistant from a phone, tablet, or another computer on your network, you need HTTPS (browsers require it for microphone access on non-localhost origins).
+
+### Prerequisites
+
+- [Tailscale](https://tailscale.com/) installed on your machine and the remote device
+- Both devices on the same Tailnet
+
+### 1. Set your Tailscale hostname (optional)
+
+```bash
+sudo tailscale set --hostname=voice-assistant
+```
+
+### 2. Find your Tailscale IP
+
+```bash
+tailscale ip -4
+# e.g. 100.77.2.54
+```
+
+### 3. Configure LiveKit to advertise your Tailscale IP
+
+Add to your `.env`:
+
+```env
+LIVEKIT_NODE_IP=100.77.2.54
+```
+
+Then restart LiveKit:
+
+```bash
+docker compose -f docker-compose.prod.yml restart livekit
+```
+
+### 4. Expose ports via Tailscale serve
+
+```bash
+# Web client (HTTPS on port 443)
 tailscale serve --bg 3001
 
-# Expose LiveKit WebSocket
+# LiveKit WebSocket (WSS on port 7880)
 tailscale serve --bg --https 7880 7880
 ```
 
-Then update `livekit.yaml` — set `node_ip` to your Tailscale IP. Access via `https://your-hostname.ts.net`.
+### 5. Access from your device
+
+Open `https://voice-assistant.your-tailnet.ts.net` in your browser. Click **Connect**, allow microphone, and talk.
+
+The web client automatically detects HTTPS and uses `wss://` for the LiveKit connection.
+
+> **Note:** `tailscale serve` does not persist across reboots. You need to re-run the serve commands after restarting your machine.
 
 ## Web UI features
 
