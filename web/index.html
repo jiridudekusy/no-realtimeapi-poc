@@ -4,47 +4,84 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Voice Assistant</title>
+  <link rel="icon" type="image/png" href="favicon.png">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="app">
-    <header>
-      <h1>Voice Assistant</h1>
-      <div style="display: flex; align-items: center; gap: 0.8rem;">
-        <span id="server-status" class="server-status checking">Server: ...</span>
-        <span id="status" class="status disconnected">● Disconnected</span>
+  <div id="layout">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Sessions</span>
+        <button id="sidebar-close" class="sidebar-close">✕</button>
       </div>
-    </header>
+      <input id="session-search" type="text" placeholder="Search sessions..." class="session-search" />
+      <button id="new-session-btn" class="new-session-btn">+ New Session</button>
+      <div id="session-list" class="session-list"></div>
+    </aside>
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
-    <div id="mic-section">
-      <button id="mic-btn" class="mic-btn" disabled>🎙️</button>
-      <div id="mic-label">Connect to start</div>
+    <!-- Main app -->
+    <div id="app">
+      <header>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <button id="hamburger-btn" class="hamburger-btn">☰</button>
+          <h1>Voice Assistant</h1>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.8rem;">
+          <span id="server-status" class="server-status checking">Server: ...</span>
+          <span id="status" class="status disconnected">● Disconnected</span>
+          <button id="theme-btn" class="theme-btn" title="Toggle light/dark mode">☀️</button>
+        </div>
+      </header>
+
+      <!-- Session info bar (name + meta + actions) -->
+      <div id="session-bar" class="session-bar" style="display: none;">
+        <div class="session-bar-left">
+          <span id="session-name" class="session-name" contenteditable="true" spellcheck="false"></span>
+          <button id="generate-name-btn" class="generate-name-btn" title="Generate name from conversation">✨</button>
+          <span id="session-meta" class="session-bar-meta"></span>
+        </div>
+        <button id="resume-btn" class="resume-btn" style="display: none;">▶ Resume</button>
+      </div>
+
+      <div id="conversation"></div>
+
+      <div id="text-input-bar" class="text-input-bar">
+        <input id="text-input" type="text" placeholder="Type a message..." class="text-input" />
+        <button id="text-send-btn" class="text-send-btn">Send</button>
+      </div>
+
+      <!-- Compact toolbar: mic + controls + metrics -->
+      <div id="toolbar">
+        <div id="toolbar-controls">
+          <button id="mic-btn" class="mic-btn" disabled>🎙️</button>
+          <button id="connect-btn">Connect</button>
+          <button id="disconnect-btn" disabled>Disconnect</button>
+          <button id="hold-btn" class="hold-btn" disabled>LLM: Auto</button>
+        </div>
+        <div id="toolbar-metrics">
+          <span>STT <strong id="lat-stt">—</strong></span>
+          <span>LLM <strong id="lat-llm">—</strong></span>
+          <span>TTS <strong id="lat-tts">—</strong></span>
+          <span>= <strong id="lat-total">—</strong></span>
+          <span class="metric-sep">|</span>
+          <span>Tokens <strong id="cost-tokens">0</strong></span>
+          <span>Cost <strong id="cost-total">$0.000</strong></span>
+        </div>
+      </div>
+      <div id="mic-label" class="mic-label-inline"></div>
+
+      <!-- Read-only footer (hidden by default) -->
+      <div id="readonly-footer" class="readonly-footer" style="display: none;">
+        📖 Read-only transcript · Click <strong>Resume</strong> to continue
+      </div>
+
+      <details id="event-log-details">
+        <summary>Server Events <button id="copy-log-btn">Copy</button></summary>
+        <div id="event-log"></div>
+      </details>
     </div>
-
-    <div id="conversation"></div>
-
-    <div id="controls">
-      <button id="connect-btn">Connect</button>
-      <button id="disconnect-btn" disabled>Disconnect</button>
-    </div>
-
-    <div id="latency-bar">
-      <span>STT <strong id="lat-stt">—</strong></span>
-      <span>LLM <strong id="lat-llm">—</strong></span>
-      <span>TTS <strong id="lat-tts">—</strong></span>
-      <span>Total <strong id="lat-total">—</strong></span>
-    </div>
-
-    <div id="cost-bar">
-      <span>Tokens: <strong id="cost-tokens">0</strong></span>
-      <span>TTS chars: <strong id="cost-chars">0</strong></span>
-      <span>Est. cost: <strong id="cost-total">$0.000</strong></span>
-    </div>
-
-    <details id="event-log-details" open>
-      <summary>Server Events <button id="copy-log-btn">Copy</button></summary>
-      <div id="event-log"></div>
-    </details>
   </div>
 
   <script type="module" src="app.js"></script>

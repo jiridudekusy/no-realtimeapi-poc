@@ -34,6 +34,10 @@ const SYSTEM_INSTRUCTIONS = `You are a helpful voice assistant. Your responses w
 interface AgentSDKHandlerOptions {
   model?: string;
   onEvent?: EventSender;
+  claudeSessionId?: string;
+  onAssistantMessage?: (text: string) => void;
+  onToolCall?: (name: string, input: string) => void;
+  onSessionIdCaptured?: (claudeSessionId: string) => void;
 }
 
 export class AgentSDKHandler {
@@ -42,10 +46,21 @@ export class AgentSDKHandler {
   #sessionId: string | null = null;
   #currentQuery: Query | null = null;
   #abortController: AbortController | null = null;
+  #onAssistantMessage: (text: string) => void;
+  #onToolCall: (name: string, input: string) => void;
+  #onSessionIdCaptured: (claudeSessionId: string) => void;
 
   constructor(opts: AgentSDKHandlerOptions = {}) {
     this.#model = opts.model || 'claude-sonnet-4-6';
     this.#onEvent = opts.onEvent || (() => {});
+    this.#sessionId = opts.claudeSessionId || null;
+    this.#onAssistantMessage = opts.onAssistantMessage || (() => {});
+    this.#onToolCall = opts.onToolCall || (() => {});
+    this.#onSessionIdCaptured = opts.onSessionIdCaptured || (() => {});
+  }
+
+  get claudeSessionId(): string | null {
+    return this.#sessionId;
   }
 
   #makeCanUseTool(): CanUseTool {
@@ -90,6 +105,8 @@ export class AgentSDKHandler {
 
     console.log(`[AgentSDK] Query: ${userText.slice(0, 80)}... (session=${this.#sessionId || 'new'})`);
     this.#onEvent({ type: 'llm_send', text: userText });
+    const llmStartTime = Date.now();
+    let llmFirstTokenTime: number | null = null;
 
     const q = query({
       prompt: userText,
@@ -109,6 +126,7 @@ export class AgentSDKHandler {
     this.#currentQuery = q;
 
     let fullText = '';
+    let allEmittedText = '';
 
     try {
       for await (const message of q) {
@@ -118,10 +136,12 @@ export class AgentSDKHandler {
         if (msg.session_id && !this.#sessionId) {
           this.#sessionId = msg.session_id;
           console.log(`[AgentSDK] Session ID captured: ${this.#sessionId}`);
+          this.#onSessionIdCaptured(msg.session_id as string);
         }
         if (msg.sessionId && !this.#sessionId) {
           this.#sessionId = msg.sessionId;
           console.log(`[AgentSDK] Session ID captured: ${this.#sessionId}`);
+          this.#onSessionIdCaptured(msg.sessionId as string);
         }
 
         // Capture sessionId from result
@@ -132,10 +152,26 @@ export class AgentSDKHandler {
 
           // Emit remaining text
           if (fullText.trim()) {
+            if (!llmFirstTokenTime) {
+              llmFirstTokenTime = Date.now();
+            }
             this.#onEvent({ type: 'llm_recv', text: fullText.trim() });
             onSentence(fullText.trim());
+            allEmittedText += fullText.trim() + ' ';
             fullText = '';
           }
+
+          if (allEmittedText.trim()) {
+            this.#onAssistantMessage(allEmittedText.trim());
+          }
+
+          // Send LLM timing
+          const llmDuration = (llmFirstTokenTime || Date.now()) - llmStartTime;
+          this.#onEvent({
+            type: 'metrics',
+            llmDuration,
+            llmTotalMs: Date.now() - llmStartTime,
+          });
 
           if (msg.subtype === 'success') {
             this.#onEvent({ type: 'agent_sdk', event: 'turn_complete', cost: msg.total_cost_usd, result: msg.result?.slice(0, 100) });
@@ -159,8 +195,12 @@ export class AgentSDKHandler {
 
             for (const sentence of sentences) {
               if (sentence.trim()) {
+                if (!llmFirstTokenTime) {
+                  llmFirstTokenTime = Date.now();
+                }
                 this.#onEvent({ type: 'llm_recv', text: sentence.trim() });
                 onSentence(sentence.trim());
+                allEmittedText += sentence.trim() + ' ';
               }
             }
             fullText = remainder;
@@ -177,6 +217,7 @@ export class AgentSDKHandler {
               console.log(`[AgentSDK] Tool call: ${block.name}: ${inputStr.slice(0, 100)}`);
               this.#onEvent({ type: 'tool_call', name: block.name, input: inputStr });
               onToolCall?.();
+              this.#onToolCall(block.name, inputStr);
             }
           }
         }
@@ -194,8 +235,12 @@ export class AgentSDKHandler {
 
               for (const sentence of sentences) {
                 if (sentence.trim()) {
+                  if (!llmFirstTokenTime) {
+                    llmFirstTokenTime = Date.now();
+                  }
                   this.#onEvent({ type: 'llm_recv', text: sentence.trim() });
                   onSentence(sentence.trim());
+                  allEmittedText += sentence.trim() + ' ';
                 }
               }
               fullText = remainder;

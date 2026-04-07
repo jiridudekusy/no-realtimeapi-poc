@@ -22,7 +22,7 @@ RUN npm run build
 
 # Run as non-root user (required for --dangerously-skip-permissions)
 ENV HOME=/home/node
-RUN mkdir -p /home/node/.claude && chown -R node:node /app /home/node
+RUN mkdir -p /home/node/.claude /app/data/sessions && chown -R node:node /app /home/node
 USER node
 
 EXPOSE 3001
