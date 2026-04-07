@@ -89,12 +89,21 @@ To use the voice assistant from a phone, tablet, or another computer on your net
 
 - [Tailscale](https://tailscale.com/) installed on your machine and the remote device
 - Both devices on the same Tailnet
+- [HTTPS certificates enabled](https://tailscale.com/kb/1153/enabling-https) for your Tailnet (in Tailscale admin console under DNS → Enable HTTPS)
 
 ### 1. Set your Tailscale hostname (optional)
 
 ```bash
 sudo tailscale set --hostname=voice-assistant
 ```
+
+Provision an HTTPS certificate for your hostname:
+
+```bash
+tailscale cert voice-assistant.your-tailnet.ts.net
+```
+
+This is instant — Tailscale issues certificates automatically.
 
 ### 2. Set LiveKit node IP to your Tailscale IP
 
