@@ -13,11 +13,36 @@
     <aside id="sidebar">
       <div class="sidebar-header">
         <span class="sidebar-title">Sessions</span>
+        <div class="sidebar-tabs">
+          <button class="sidebar-tab active" data-tab="chats">Chats</button>
+          <button class="sidebar-tab" data-tab="files">Files</button>
+        </div>
         <button id="sidebar-close" class="sidebar-close">✕</button>
       </div>
-      <input id="session-search" type="text" placeholder="Search sessions..." class="session-search" />
-      <button id="new-session-btn" class="new-session-btn">+ New Session</button>
-      <div id="session-list" class="session-list"></div>
+
+      <!-- Chats tab -->
+      <div id="tab-chats" class="sidebar-tab-content active">
+        <input id="session-search" type="text" placeholder="Search sessions..." class="session-search" />
+        <div class="sidebar-actions">
+          <button id="new-session-btn" class="new-session-btn">+ New Chat</button>
+          <button id="new-project-btn" class="new-project-btn">+ New Project</button>
+        </div>
+        <div id="project-tree" class="project-tree"></div>
+      </div>
+
+      <!-- Files tab -->
+      <div id="tab-files" class="sidebar-tab-content">
+        <div id="file-tree" class="file-tree"></div>
+        <div id="file-upload-area" class="file-upload-area">
+          <label class="file-upload-btn">
+            📎 Upload file
+            <input id="file-upload-input" type="file" style="display:none" />
+          </label>
+          <div id="file-upload-error" class="file-upload-error"></div>
+        </div>
+      </div>
+
+      <div id="sidebar-resize" class="sidebar-resize"></div>
     </aside>
     <div id="sidebar-overlay" class="sidebar-overlay"></div>
 
@@ -35,9 +60,11 @@
         </div>
       </header>
 
-      <!-- Session info bar (name + meta + actions) -->
+      <!-- Breadcrumb session bar -->
       <div id="session-bar" class="session-bar" style="display: none;">
         <div class="session-bar-left">
+          <span id="breadcrumb-project" class="breadcrumb-project"></span>
+          <span class="breadcrumb-sep">/</span>
           <span id="session-name" class="session-name" contenteditable="true" spellcheck="false"></span>
           <button id="generate-name-btn" class="generate-name-btn" title="Generate name from conversation">✨</button>
           <span id="session-meta" class="session-bar-meta"></span>
@@ -46,6 +73,15 @@
       </div>
 
       <div id="conversation"></div>
+
+      <!-- File viewer (hidden by default) -->
+      <div id="file-viewer" style="display:none;">
+        <div class="file-viewer-header">
+          <span id="file-viewer-path"></span>
+          <button id="file-viewer-back" class="file-viewer-back">← Back to chat</button>
+        </div>
+        <pre id="file-viewer-content" class="file-viewer-content"></pre>
+      </div>
 
       <div id="text-input-bar" class="text-input-bar">
         <input id="text-input" type="text" placeholder="Type a message..." class="text-input" />
@@ -81,6 +117,47 @@
         <summary>Server Events <button id="copy-log-btn">Copy</button></summary>
         <div id="event-log"></div>
       </details>
+    </div>
+  </div>
+
+  <!-- New project modal -->
+  <div id="modal-new-project" class="modal" style="display:none;">
+    <div class="modal-content">
+      <h3>New Project</h3>
+      <input id="new-project-name" type="text" placeholder="Project name..." class="session-search" style="margin-bottom:0.5rem" />
+      <input id="new-project-desc" type="text" placeholder="Description (optional)..." class="session-search" style="margin-bottom:0.5rem" />
+      <div id="new-project-error" class="modal-error"></div>
+      <div class="modal-actions">
+        <button id="new-project-submit" class="new-session-btn" style="padding:0.4rem 1rem">Create</button>
+        <button id="new-project-cancel" class="modal-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete project modal -->
+  <div id="modal-delete-project" class="modal" style="display:none;">
+    <div class="modal-content">
+      <h3>Delete project</h3>
+      <p>Type <strong id="modal-project-name"></strong> to confirm:</p>
+      <input id="modal-project-input" type="text" class="session-search" />
+      <div id="modal-project-error" class="modal-error"></div>
+      <div class="modal-actions">
+        <button id="modal-project-delete" class="modal-btn-danger" disabled>Delete</button>
+        <button id="modal-project-cancel" class="modal-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete session modal -->
+  <div id="modal-delete-session" class="modal" style="display:none;">
+    <div class="modal-content">
+      <h3>Delete this chat?</h3>
+      <p>This cannot be undone.</p>
+      <div id="modal-session-error" class="modal-error"></div>
+      <div class="modal-actions">
+        <button id="modal-session-delete" class="modal-btn-danger">Yes, delete</button>
+        <button id="modal-session-cancel" class="modal-btn">No</button>
+      </div>
     </div>
   </div>
 

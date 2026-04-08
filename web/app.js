@@ -65,8 +65,11 @@ const state = {
 const sessionState = {
   currentSessionId: null,
   viewingSessionId: null,
+  viewingFile: null,
   sessions: [],
   pendingResumeSessionId: null, // set before connect, sent when agent is ready
+  currentProject: '_global',
+  pendingResumeProject: null,
 };
 
 // --- Sidebar toggle (mobile) ---
@@ -82,41 +85,128 @@ function closeSidebar() {
   $('#sidebar-overlay').classList.remove('open');
 }
 
-// --- Session list ---
-async function fetchSessions(query) {
-  const url = query ? `/api/sessions?q=${encodeURIComponent(query)}` : '/api/sessions';
+// --- Project tree ---
+let cachedTreeData = { globalChats: [], projects: [] };
+
+async function fetchProjectTree() {
   try {
-    const res = await fetch(url);
-    if (!res.ok) return;
-    sessionState.sessions = await res.json();
-    renderSessionList();
+    const projectsRes = await fetch('/api/projects');
+    const projects = projectsRes.ok ? await projectsRes.json() : [];
+
+    const globalRes = await fetch('/api/projects/_global/sessions');
+    const globalChats = globalRes.ok ? await globalRes.json() : [];
+
+    const projectData = await Promise.all(projects.map(async (p) => {
+      const res = await fetch(`/api/projects/${p.name}/sessions`);
+      const chats = res.ok ? await res.json() : [];
+      return { ...p, chats };
+    }));
+
+    cachedTreeData = { globalChats, projects: projectData };
+    renderProjectTree(globalChats, projectData);
     updateSessionBar();
   } catch (err) {
-    console.error('Failed to fetch sessions:', err);
+    console.error('Failed to fetch project tree:', err);
   }
 }
 
-function renderSessionList() {
-  const list = $('#session-list');
-  list.innerHTML = '';
-  for (const s of sessionState.sessions) {
-    const div = document.createElement('div');
-    div.className = 'session-item';
-    if (s.sessionId === sessionState.currentSessionId) div.classList.add('active');
-    if (s.sessionId === sessionState.viewingSessionId) div.classList.add('viewing');
-    div.dataset.sessionId = s.sessionId;
-
-    const date = new Date(s.updated);
-    const dateStr = date.toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' });
-    const timeStr = date.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
-
-    div.innerHTML = `
-      <div class="session-preview">${escapeHtml(s.name || s.preview)}</div>
-      <div class="session-meta">${dateStr} ${timeStr} · ${s.messageCount} zpráv</div>
-    `;
-    div.addEventListener('click', () => onSessionClick(s.sessionId));
-    list.appendChild(div);
+function renderProjectTree(globalChats, projects) {
+  const tree = $('#project-tree');
+  tree.innerHTML = '';
+  tree.appendChild(createProjectGroup('_global', '🏠 Home', null, globalChats, false));
+  for (const p of projects) {
+    tree.appendChild(createProjectGroup(p.name, '📁 ' + p.name, p.description, p.chats, true));
   }
+}
+
+function createProjectGroup(projectName, displayName, description, chats, canDelete) {
+  const group = document.createElement('div');
+  group.className = 'project-group';
+
+  const isActive = sessionState.currentProject === projectName;
+  const isExpanded = isActive || (chats.length > 0 && chats.length <= 3);
+
+  const header = document.createElement('div');
+  header.className = 'project-header' + (isActive ? ' active' : '');
+  header.innerHTML =
+    '<span class="project-toggle">' + (isExpanded ? '▼' : '▶') + '</span>' +
+    '<span class="project-name">' + escapeHtml(displayName) + '</span>' +
+    (!isExpanded && chats.length > 0 ? '<span class="project-count">(' + chats.length + ')</span>' : '') +
+    (canDelete ? '<button class="project-delete" title="Delete project">✕</button>' : '');
+
+  header.addEventListener('click', (e) => {
+    if (e.target.closest('.project-delete')) return;
+    // Set as current project
+    sessionState.currentProject = projectName;
+    updateSessionBar();
+    // Toggle collapse
+    const chatsDiv = group.querySelector('.project-chats');
+    const toggle = header.querySelector('.project-toggle');
+    chatsDiv.classList.toggle('collapsed');
+    toggle.textContent = chatsDiv.classList.contains('collapsed') ? '▶' : '▼';
+    // Update active highlights
+    document.querySelectorAll('.project-header').forEach(h => h.classList.remove('active'));
+    header.classList.add('active');
+  });
+
+  if (canDelete) {
+    header.querySelector('.project-delete').addEventListener('click', (e) => {
+      e.stopPropagation();
+      showDeleteProjectModal(projectName);
+    });
+  }
+
+  group.appendChild(header);
+
+  const chatsDiv = document.createElement('div');
+  chatsDiv.className = 'project-chats' + (isExpanded ? '' : ' collapsed');
+
+  for (const chat of chats) {
+    const item = document.createElement('div');
+    item.className = 'chat-item' + (chat.sessionId === sessionState.currentSessionId && projectName === sessionState.currentProject ? ' active' : '');
+    const age = getTimeAgo(chat.updated);
+    item.innerHTML =
+      '<span class="chat-item-text">' + escapeHtml(chat.name || chat.preview) + '</span>' +
+      '<span class="chat-item-meta">' + age + '</span>' +
+      '<button class="chat-item-delete" title="Delete chat">🗑</button>';
+
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.chat-item-delete')) return;
+      onSessionClick(chat.sessionId, projectName);
+    });
+
+    item.querySelector('.chat-item-delete').addEventListener('click', (e) => {
+      e.stopPropagation();
+      showDeleteSessionModal(projectName, chat.sessionId);
+    });
+
+    chatsDiv.appendChild(item);
+  }
+
+  group.appendChild(chatsDiv);
+  return group;
+}
+
+function getTimeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 60) return minutes + 'm';
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + 'h';
+  const days = Math.floor(hours / 24);
+  return days + 'd';
+}
+
+function findSessionInTree(sessionId) {
+  for (const chat of cachedTreeData.globalChats) {
+    if (chat.sessionId === sessionId) return chat;
+  }
+  for (const p of cachedTreeData.projects) {
+    for (const chat of p.chats) {
+      if (chat.sessionId === sessionId) return chat;
+    }
+  }
+  return null;
 }
 
 function escapeHtml(text) {
@@ -125,33 +215,62 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Fetch sessions on load
-fetchSessions();
+// Fetch project tree on load
+fetchProjectTree();
 
 // --- Session name ---
 function updateSessionBar() {
   const bar = $('#session-bar');
+  const projectEl = $('#breadcrumb-project');
   const nameEl = $('#session-name');
   const metaEl = $('#session-meta');
   const resumeBtn = $('#resume-btn');
   const targetId = sessionState.viewingSessionId || sessionState.currentSessionId;
+
+  if (sessionState.viewingFile) {
+    bar.style.display = 'flex';
+    const project = sessionState.currentProject || '_global';
+    projectEl.textContent = project === '_global' ? '🏠 Home' : '📁 ' + project;
+    nameEl.textContent = '📄 ' + sessionState.viewingFile;
+    nameEl.contentEditable = 'false';
+    $('#generate-name-btn').style.display = 'none';
+    metaEl.textContent = '';
+    resumeBtn.style.display = 'none';
+    return;
+  }
+
   if (!targetId) {
+    if (sessionState.currentProject && sessionState.currentProject !== '_global') {
+      bar.style.display = 'flex';
+      projectEl.textContent = '📁 ' + sessionState.currentProject;
+      nameEl.textContent = '';
+      metaEl.textContent = '';
+      resumeBtn.style.display = 'none';
+      $('#generate-name-btn').style.display = 'none';
+      return;
+    }
     bar.style.display = 'none';
     return;
   }
-  const session = sessionState.sessions.find(s => s.sessionId === targetId);
+
   bar.style.display = 'flex';
+  const project = sessionState.currentProject || '_global';
+  projectEl.textContent = project === '_global' ? '🏠 Home' : '📁 ' + project;
+
+  const session = findSessionInTree(targetId);
   nameEl.textContent = session?.name || session?.preview || 'Untitled';
-  // Meta info (date + count)
+  nameEl.contentEditable = sessionState.viewingSessionId ? 'false' : 'true';
+  $('#generate-name-btn').style.display = '';
+
   if (session) {
     const date = new Date(session.created);
     const dateStr = date.toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric', year: 'numeric' });
     const timeStr = date.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
-    metaEl.textContent = `${dateStr} ${timeStr} · ${session.messageCount} zpráv`;
+    metaEl.textContent = dateStr + ' ' + timeStr + ' · ' + session.messageCount + ' zpráv';
   } else {
     metaEl.textContent = '';
   }
-  // Resume button only in read-only mode
+
   resumeBtn.style.display = sessionState.viewingSessionId ? '' : 'none';
 }
 
@@ -159,12 +278,12 @@ $('#session-name').addEventListener('blur', async () => {
   const name = $('#session-name').textContent.trim();
   const targetId = sessionState.viewingSessionId || sessionState.currentSessionId;
   if (!name || !targetId) return;
-  await fetch(`/api/sessions/${targetId}`, {
+  await fetch(`/api/projects/${sessionState.currentProject}/sessions/${targetId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   });
-  fetchSessions();
+  fetchProjectTree();
 });
 
 $('#session-name').addEventListener('keydown', (e) => {
@@ -178,11 +297,11 @@ $('#generate-name-btn').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = '...';
   try {
-    const res = await fetch(`/api/sessions/${targetId}/generate-name`, { method: 'POST' });
+    const res = await fetch(`/api/projects/${sessionState.currentProject}/sessions/${targetId}/generate-name`, { method: 'POST' });
     if (res.ok) {
       const { name } = await res.json();
       $('#session-name').textContent = name;
-      fetchSessions();
+      fetchProjectTree();
     }
   } finally {
     btn.disabled = false;
@@ -195,32 +314,56 @@ let searchTimeout = null;
 $('#session-search').addEventListener('input', (e) => {
   clearTimeout(searchTimeout);
   searchTimeout = setTimeout(() => {
-    fetchSessions(e.target.value.trim() || undefined);
+    const query = e.target.value.trim();
+    if (query) {
+      fetchProjectTreeFiltered(query);
+    } else {
+      fetchProjectTree();
+    }
   }, 300);
 });
 
-async function onSessionClick(sessionId) {
-  // If clicking the active session while connected, just close sidebar
-  if (sessionId === sessionState.currentSessionId && state.connected) {
+async function fetchProjectTreeFiltered(query) {
+  try {
+    const projectsRes = await fetch('/api/projects');
+    const projects = projectsRes.ok ? await projectsRes.json() : [];
+
+    const globalRes = await fetch('/api/projects/_global/sessions?q=' + encodeURIComponent(query));
+    const globalChats = globalRes.ok ? await globalRes.json() : [];
+
+    const projectData = await Promise.all(projects.map(async (p) => {
+      const res = await fetch('/api/projects/' + p.name + '/sessions?q=' + encodeURIComponent(query));
+      const chats = res.ok ? await res.json() : [];
+      return { ...p, chats };
+    }));
+
+    const filtered = projectData.filter(p => p.chats.length > 0);
+    renderProjectTree(globalChats, filtered);
+  } catch (err) {
+    console.error('Failed to search:', err);
+  }
+}
+
+async function onSessionClick(sessionId, projectName) {
+  if (sessionId === sessionState.currentSessionId && projectName === sessionState.currentProject && state.connected) {
     closeSidebar();
     return;
   }
 
-  // Disconnect voice if active
   if (state.connected) {
     room.disconnect();
   }
 
-  // Clear active session — we're now browsing history
+  sessionState.currentProject = projectName || '_global';
   sessionState.currentSessionId = null;
 
   try {
-    const res = await fetch(`/api/sessions/${sessionId}`);
+    const res = await fetch('/api/projects/' + sessionState.currentProject + '/sessions/' + sessionId);
     if (!res.ok) return;
     const session = await res.json();
     showReadOnlyTranscript(session);
     sessionState.viewingSessionId = sessionId;
-    renderSessionList();
+    fetchProjectTree();
     updateSessionBar();
     closeSidebar();
   } catch (err) {
@@ -264,7 +407,7 @@ function exitReadOnlyMode() {
   $('#readonly-footer').style.display = 'none';
   $('#toolbar').style.display = '';
   $('#conversation').innerHTML = '';
-  renderSessionList();
+  fetchProjectTree();
   updateSessionBar();
 }
 
@@ -272,7 +415,7 @@ async function resumeSession(sessionId) {
   // Load transcript before clearing read-only mode
   let sessionData = null;
   try {
-    const sessionRes = await fetch(`/api/sessions/${sessionId}`);
+    const sessionRes = await fetch(`/api/projects/${sessionState.currentProject}/sessions/${sessionId}`);
     if (sessionRes.ok) sessionData = await sessionRes.json();
   } catch {}
 
@@ -320,7 +463,11 @@ $('#new-session-btn').addEventListener('click', () => {
     room.disconnect();
   }
   exitReadOnlyMode();
+  sessionState.currentSessionId = null;
+  sessionState.viewingSessionId = null;
+  $('#conversation').innerHTML = '';
   closeSidebar();
+  updateSessionBar();
 });
 
 // --- Text input ---
@@ -354,6 +501,7 @@ async function sendTextMessage() {
       body: JSON.stringify({
         text,
         sessionId: targetSessionId || undefined,
+        projectName: sessionState.currentProject || '_global',
       }),
     });
 
@@ -382,8 +530,7 @@ async function sendTextMessage() {
 
         if (data.type === 'session_info') {
           sessionState.currentSessionId = data.sessionId;
-          renderSessionList();
-          fetchSessions(); // refresh to get name
+          fetchProjectTree();
         } else if (data.type === 'text') {
           if (!state.currentAssistMsg) {
             // Reset latency for text response (no STT/TTS)
@@ -423,7 +570,12 @@ async function sendTextMessage() {
             state.currentAssistMsg = null;
           }
           sessionState.currentSessionId = data.sessionId;
-          fetchSessions();
+          fetchProjectTree();
+        } else if (data.type === 'context_switched') {
+          sessionState.currentProject = data.projectName || '_global';
+          sessionState.currentSessionId = data.sessionId;
+          fetchProjectTree();
+          updateSessionBar();
         } else if (data.type === 'error') {
           addMessage('assistant', `Error: ${data.error}`);
         }
@@ -488,6 +640,7 @@ $('#connect-btn').addEventListener('click', async () => {
     // immediately after connect, so pendingResumeSessionId must be ready
     if (sessionState.currentSessionId) {
       sessionState.pendingResumeSessionId = sessionState.currentSessionId;
+      sessionState.pendingResumeProject = sessionState.currentProject;
     }
 
     if (!state.connected) {
@@ -584,8 +737,7 @@ room.on(RoomEvent.Disconnected, () => {
     state.currentAssistMsg = null;
   }
   // Keep currentSessionId — text chat should continue in the same session after voice disconnect
-  fetchSessions();
-  renderSessionList();
+  fetchProjectTree();
 });
 
 room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
@@ -718,7 +870,7 @@ function formatMetrics(msg) {
   return parts.join(' | ');
 }
 
-room.on(RoomEvent.DataReceived, (data, participant) => {
+room.on(RoomEvent.DataReceived, async (data, participant) => {
   try {
     const msg = JSON.parse(new TextDecoder().decode(data));
 
@@ -797,17 +949,356 @@ room.on(RoomEvent.DataReceived, (data, participant) => {
         const resumeId = sessionState.pendingResumeSessionId;
         sessionState.pendingResumeSessionId = null;
         room.localParticipant.publishData(
-          new TextEncoder().encode(JSON.stringify({ type: 'session_init', sessionId: resumeId })),
+          new TextEncoder().encode(JSON.stringify({
+            type: 'session_init',
+            sessionId: resumeId,
+            projectName: sessionState.pendingResumeProject || '_global',
+          })),
           { reliable: true }
         );
         // Don't update currentSessionId yet — wait for agent's response with correct session
         return;
       }
       sessionState.currentSessionId = msg.sessionId;
+      if (msg.projectName) sessionState.currentProject = msg.projectName;
       sessionState.viewingSessionId = null;
-      renderSessionList();
-      fetchSessions();
+      fetchProjectTree();
+    }
+
+    // Context switched (project change from voice)
+    else if (msg.type === 'context_switched') {
+      sessionState.currentProject = msg.projectName || '_global';
+      sessionState.currentSessionId = msg.sessionId;
+      if (msg.sessionId) {
+        try {
+          const res = await fetch(`/api/projects/${sessionState.currentProject}/sessions/${msg.sessionId}`);
+          if (res.ok) {
+            const session = await res.json();
+            $('#conversation').innerHTML = '';
+            for (const m of session.messages) {
+              if (m.role === 'tool') continue;
+              addMessage(m.role === 'user' ? 'user' : 'assistant', m.text);
+            }
+          }
+        } catch {}
+      } else {
+        $('#conversation').innerHTML = '';
+      }
+      fetchProjectTree();
+      updateSessionBar();
+      logEvent('agent', `Context switched: ${msg.projectName}/${msg.sessionId || 'new'}`);
     }
 
   } catch (e) { console.warn('Failed to parse data message:', e); }
+});
+
+// --- Sidebar tabs ---
+document.querySelectorAll('.sidebar-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.sidebar-tab-content').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelector('#tab-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'files') fetchFileTree();
+  });
+});
+
+// --- File browser ---
+const TEXT_EXTENSIONS = ['.md','.txt','.json','.ts','.js','.css','.html','.yaml','.yml','.csv','.xml','.env','.log','.mjs','.jsx','.tsx'];
+
+async function fetchFileTree() {
+  const tree = $('#file-tree');
+  tree.innerHTML = '<div style="color:#666;font-size:0.8rem;padding:0.5rem">Loading...</div>';
+  try {
+    const project = sessionState.currentProject || '_global';
+    const res = await fetch('/api/projects/' + project + '/files');
+    if (!res.ok) throw new Error('Failed to load files');
+    const files = await res.json();
+    tree.innerHTML = '';
+    renderFileTree(tree, files, '');
+  } catch (err) {
+    tree.innerHTML = '<div style="color:#ef4444;font-size:0.8rem;padding:0.5rem">' + err.message + '</div>';
+  }
+}
+
+function renderFileTree(container, entries, pathPrefix) {
+  for (const entry of entries) {
+    const fullPath = pathPrefix ? pathPrefix + '/' + entry.name : entry.name;
+    const item = document.createElement('div');
+    item.className = 'file-tree-item';
+    item.style.paddingLeft = ((fullPath.split('/').length - 1) * 0.8 + 0.4) + 'rem';
+
+    if (entry.type === 'directory') {
+      item.classList.add('file-tree-dir');
+      item.textContent = '📁 ' + entry.name + '/';
+      let expanded = true;
+      item.addEventListener('click', () => {
+        expanded = !expanded;
+        const children = item.nextElementSibling;
+        if (children && children.classList.contains('file-tree-children')) {
+          children.style.display = expanded ? '' : 'none';
+        }
+        item.textContent = (expanded ? '📂 ' : '📁 ') + entry.name + '/';
+      });
+      container.appendChild(item);
+      if (entry.children && entry.children.length > 0) {
+        const childContainer = document.createElement('div');
+        childContainer.className = 'file-tree-children';
+        renderFileTree(childContainer, entry.children, fullPath);
+        container.appendChild(childContainer);
+      }
+    } else {
+      item.textContent = '📄 ' + entry.name;
+      item.addEventListener('click', () => openFile(fullPath, entry.name));
+      container.appendChild(item);
+    }
+  }
+}
+
+function openFile(filePath, fileName) {
+  const project = sessionState.currentProject || '_global';
+  const ext = '.' + fileName.split('.').pop().toLowerCase();
+  if (TEXT_EXTENSIONS.includes(ext)) {
+    showFileViewer(project, filePath);
+  } else {
+    window.open('/api/projects/' + project + '/files/' + filePath, '_blank');
+  }
+}
+
+async function showFileViewer(project, filePath) {
+  try {
+    const res = await fetch('/api/projects/' + project + '/files/' + filePath);
+    if (!res.ok) throw new Error('Failed to load file');
+    const content = await res.text();
+    $('#conversation').style.display = 'none';
+    $('#text-input-bar').style.display = 'none';
+    const viewer = $('#file-viewer');
+    viewer.style.display = 'flex';
+    viewer.style.flexDirection = 'column';
+    viewer.style.flex = '1';
+    viewer.style.minHeight = '0';
+    $('#file-viewer-path').textContent = '📄 ' + filePath;
+    $('#file-viewer-content').textContent = content;
+    sessionState.viewingFile = filePath;
+    updateSessionBar();
+  } catch (err) {
+    alert('Error: ' + err.message);
+  }
+}
+
+$('#file-viewer-back').addEventListener('click', () => {
+  $('#file-viewer').style.display = 'none';
+  $('#conversation').style.display = '';
+  $('#text-input-bar').style.display = '';
+  sessionState.viewingFile = null;
+  updateSessionBar();
+});
+
+$('#file-upload-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const project = sessionState.currentProject || '_global';
+  const errorEl = $('#file-upload-error');
+  errorEl.textContent = '';
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch('/api/projects/' + project + '/files', { method: 'POST', body: formData });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Upload failed');
+    }
+    fetchFileTree();
+  } catch (err) {
+    errorEl.textContent = 'Upload failed: ' + err.message;
+  }
+  e.target.value = '';
+});
+
+// --- New project form ---
+$('#new-project-btn').addEventListener('click', () => {
+  $('#modal-new-project').style.display = 'flex';
+  $('#new-project-name').value = '';
+  $('#new-project-desc').value = '';
+  $('#new-project-error').textContent = '';
+  $('#new-project-name').focus();
+});
+
+$('#new-project-cancel').addEventListener('click', () => {
+  $('#modal-new-project').style.display = 'none';
+});
+
+async function submitNewProject() {
+  const name = $('#new-project-name').value.trim();
+  if (!name) return;
+  const description = $('#new-project-desc').value.trim() || undefined;
+  const errorEl = $('#new-project-error');
+  errorEl.textContent = '';
+  try {
+    const res = await fetch('/api/projects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, description }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      errorEl.textContent = data.error || 'Failed to create project';
+      return;
+    }
+    $('#modal-new-project').style.display = 'none';
+    fetchProjectTree();
+  } catch (err) {
+    $('#new-project-error').textContent = err.message;
+  }
+}
+
+$('#new-project-submit').addEventListener('click', submitNewProject);
+
+$('#new-project-name').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); submitNewProject(); }
+  if (e.key === 'Escape') { $('#modal-new-project').style.display = 'none'; }
+});
+
+$('#new-project-desc').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); submitNewProject(); }
+  if (e.key === 'Escape') { $('#modal-new-project').style.display = 'none'; }
+});
+
+// --- Delete project modal ---
+let pendingDeleteProject = null;
+
+function showDeleteProjectModal(projectName) {
+  pendingDeleteProject = projectName;
+  $('#modal-project-name').textContent = projectName;
+  $('#modal-project-input').value = '';
+  $('#modal-project-error').textContent = '';
+  $('#modal-project-delete').disabled = true;
+  $('#modal-delete-project').style.display = 'flex';
+  $('#modal-project-input').focus();
+}
+
+$('#modal-project-input').addEventListener('input', (e) => {
+  $('#modal-project-delete').disabled = e.target.value !== pendingDeleteProject;
+});
+
+$('#modal-project-delete').addEventListener('click', async () => {
+  if (!pendingDeleteProject) return;
+  const errorEl = $('#modal-project-error');
+  errorEl.textContent = '';
+  try {
+    const res = await fetch('/api/projects/' + pendingDeleteProject, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmName: pendingDeleteProject }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Delete failed');
+    }
+    $('#modal-delete-project').style.display = 'none';
+    if (sessionState.currentProject === pendingDeleteProject) {
+      sessionState.currentProject = '_global';
+      sessionState.currentSessionId = null;
+    }
+    fetchProjectTree();
+  } catch (err) {
+    errorEl.textContent = err.message;
+  }
+});
+
+$('#modal-project-cancel').addEventListener('click', () => {
+  $('#modal-delete-project').style.display = 'none';
+});
+
+$('#modal-project-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !$('#modal-project-delete').disabled) {
+    e.preventDefault();
+    $('#modal-project-delete').click();
+  }
+  if (e.key === 'Escape') { $('#modal-delete-project').style.display = 'none'; }
+});
+
+// Global Esc handler for all modals
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    $('#modal-new-project').style.display = 'none';
+    $('#modal-delete-project').style.display = 'none';
+    $('#modal-delete-session').style.display = 'none';
+  }
+});
+
+// --- Delete session modal ---
+let pendingDeleteSession = null;
+
+function showDeleteSessionModal(projectName, sessionId) {
+  pendingDeleteSession = { projectName, sessionId };
+  $('#modal-session-error').textContent = '';
+  $('#modal-delete-session').style.display = 'flex';
+}
+
+$('#modal-session-delete').addEventListener('click', async () => {
+  if (!pendingDeleteSession) return;
+  const { projectName, sessionId } = pendingDeleteSession;
+  const errorEl = $('#modal-session-error');
+  errorEl.textContent = '';
+  try {
+    const res = await fetch('/api/projects/' + projectName + '/sessions/' + sessionId, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Delete failed');
+    }
+    $('#modal-delete-session').style.display = 'none';
+    if (sessionState.currentSessionId === sessionId) {
+      sessionState.currentSessionId = null;
+      $('#conversation').innerHTML = '';
+    }
+    fetchProjectTree();
+  } catch (err) {
+    errorEl.textContent = err.message;
+  }
+});
+
+$('#modal-session-cancel').addEventListener('click', () => {
+  $('#modal-delete-session').style.display = 'none';
+});
+
+// --- Sidebar resize ---
+const resizeHandle = $('#sidebar-resize');
+let isResizing = false;
+
+resizeHandle.addEventListener('mousedown', (e) => {
+  isResizing = true;
+  resizeHandle.classList.add('dragging');
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+  e.preventDefault();
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!isResizing) return;
+  const appMinWidth = 300;
+  const maxWidth = window.innerWidth - appMinWidth;
+  const newWidth = Math.max(200, Math.min(e.clientX, maxWidth));
+  $('#sidebar').style.width = newWidth + 'px';
+});
+
+document.addEventListener('mouseup', () => {
+  if (!isResizing) return;
+  isResizing = false;
+  resizeHandle.classList.remove('dragging');
+  document.body.style.cursor = '';
+  document.body.style.userSelect = '';
+  localStorage.setItem('sidebarWidth', $('#sidebar').style.width);
+});
+
+const savedWidth = localStorage.getItem('sidebarWidth');
+if (savedWidth) $('#sidebar').style.width = savedWidth;
+
+// --- Breadcrumb click ---
+$('#breadcrumb-project').addEventListener('click', () => {
+  document.querySelector('.sidebar-tab[data-tab="chats"]').click();
+  if (window.innerWidth <= 640) {
+    $('#sidebar').classList.add('open');
+    $('#sidebar-overlay').classList.add('open');
+  }
 });

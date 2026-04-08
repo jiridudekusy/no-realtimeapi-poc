@@ -103,6 +103,61 @@ body {
 .session-preview { font-size: 0.8rem; color: #999; }
 .session-meta { font-size: 0.7rem; color: #555; margin-top: 0.2rem; }
 
+/* --- Sidebar Tabs --- */
+.sidebar-tabs { display: flex; gap: 0; }
+.sidebar-tab {
+  background: none; border: none; color: #666; font-size: 0.75rem;
+  padding: 0.2rem 0.5rem; cursor: pointer; border-bottom: 2px solid transparent;
+}
+.sidebar-tab.active { color: #93c5fd; border-bottom-color: #2563eb; }
+.sidebar-tab:hover { color: #ccc; }
+.sidebar-tab-content { display: none; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; }
+.sidebar-tab-content.active { display: flex; }
+.sidebar-actions { display: flex; gap: 0.3rem; margin-bottom: 0.5rem; }
+.sidebar-actions .new-session-btn,
+.sidebar-actions .new-project-btn {
+  flex: 1;
+  font-size: 0.8rem;
+  padding: 0.45rem 0.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 0;
+}
+.sidebar-actions .new-project-btn { background: rgba(168,85,247,0.2); color: #c084fc; }
+.sidebar-actions .new-project-btn:hover { background: rgba(168,85,247,0.3); }
+.new-project-form { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.5rem; padding: 0.5rem; border: 1px solid #333; border-radius: 6px; }
+.new-project-form-actions { display: flex; gap: 0.3rem; }
+.new-project-cancel { flex: 1; background: rgba(255,255,255,0.1); color: #888; border: none; border-radius: 6px; padding: 0.35rem; cursor: pointer; font-size: 0.75rem; }
+
+/* --- Project Tree --- */
+.project-tree { flex: 1; overflow-y: auto; }
+.project-group { margin-bottom: 0.2rem; }
+.project-header { display: flex; align-items: center; gap: 0.3rem; padding: 0.4rem 0.5rem; cursor: pointer; border-radius: 4px; font-size: 0.9rem; color: #999; }
+.project-header:hover { background: rgba(255,255,255,0.05); }
+.project-header.active { color: #93c5fd; }
+.project-toggle { font-size: 0.6rem; width: 1rem; text-align: center; flex-shrink: 0; }
+.project-name { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-count { color: #555; font-size: 0.7rem; }
+.project-delete { display: none; background: none; border: none; color: #666; cursor: pointer; font-size: 0.7rem; padding: 0 0.2rem; }
+.project-header:hover .project-delete { display: block; }
+.project-delete:hover { color: #ef4444; }
+.project-chats { padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.15rem; }
+.project-chats.collapsed { display: none; }
+.chat-item { display: flex; align-items: center; padding: 0.3rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; color: #888; }
+.chat-item:hover { background: rgba(255,255,255,0.05); }
+.chat-item.active { background: rgba(37,99,235,0.15); color: #93c5fd; }
+.chat-item-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-item-meta { color: #555; font-size: 0.65rem; flex-shrink: 0; margin-left: 0.3rem; }
+.chat-item-delete { display: none; background: none; border: none; color: #666; cursor: pointer; font-size: 0.65rem; padding: 0 0.2rem; }
+.chat-item:hover .chat-item-delete { display: block; }
+.chat-item-delete:hover { color: #ef4444; }
+
+/* --- Sidebar Resize --- */
+#sidebar { position: relative; }
+.sidebar-resize { position: absolute; top: 0; right: 0; width: 4px; height: 100%; cursor: col-resize; z-index: 5; }
+.sidebar-resize:hover, .sidebar-resize.dragging { background: #2563eb; }
+
 /* Hamburger — visible on mobile only */
 .hamburger-btn {
   display: none;
@@ -420,6 +475,42 @@ header h1 { font-size: 1.2rem; }
   cursor: pointer;
 }
 
+/* --- Breadcrumb --- */
+.breadcrumb-project { color: #f59e0b; font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.breadcrumb-project:hover { text-decoration: underline; }
+.breadcrumb-sep { color: #444; margin: 0 0.3rem; }
+
+/* --- File Tree --- */
+.file-tree { flex: 1; overflow-y: auto; padding: 0.3rem 0; font-size: 0.8rem; }
+.file-tree-item { padding: 0.15rem 0.4rem; cursor: pointer; color: #999; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.file-tree-item:hover { background: rgba(255,255,255,0.05); color: #ccc; }
+.file-tree-dir { color: #f59e0b; font-weight: 600; }
+.file-upload-area { padding: 0.5rem; }
+.file-upload-btn { display: block; text-align: center; background: #2563eb; color: white; padding: 0.4rem; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
+.file-upload-btn:hover { background: #1d4ed8; }
+.file-upload-error { color: #ef4444; font-size: 0.75rem; margin-top: 0.3rem; }
+
+/* --- File Viewer --- */
+.file-viewer-header { display: flex; justify-content: space-between; align-items: center; padding: 0.3rem 0; font-size: 0.85rem; color: #888; }
+.file-viewer-back { background: none; border: 1px solid #333; color: #888; border-radius: 4px; padding: 0.2rem 0.6rem; font-size: 0.75rem; cursor: pointer; }
+.file-viewer-back:hover { color: #ccc; border-color: #555; }
+.file-viewer-content { flex: 1; min-height: 0; overflow: auto; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 1rem; font-family: 'SF Mono','Fira Code',monospace; font-size: 0.8rem; line-height: 1.5; color: #ccc; white-space: pre-wrap; word-break: break-word; }
+
+/* --- Modals --- */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal-content { background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 1.5rem; max-width: 400px; width: 90%; }
+.modal-content h3 { margin-bottom: 0.5rem; font-size: 1rem; }
+.modal-content p { font-size: 0.85rem; color: #999; margin-bottom: 0.75rem; }
+.modal-error { color: #ef4444; font-size: 0.8rem; margin-bottom: 0.5rem; }
+.modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+.modal-btn { background: rgba(255,255,255,0.1); color: #ccc; border: none; border-radius: 6px; padding: 0.4rem 1rem; font-size: 0.85rem; cursor: pointer; }
+.modal-btn:hover { background: rgba(255,255,255,0.15); }
+.modal-btn-danger { background: rgba(239,68,68,0.2); color: #f87171; border: none; border-radius: 6px; padding: 0.4rem 1rem; font-size: 0.85rem; cursor: pointer; }
+.modal-btn-danger:hover { background: rgba(239,68,68,0.3); }
+.modal-btn-danger:disabled { opacity: 0.4; cursor: default; }
+
+#app { min-width: 300px; }
+
 /* Light mode styles */
 body.light { background: #f5f5f5; color: #1a1a1a; }
 body.light .theme-btn { border-color: #ccc; }
@@ -462,6 +553,16 @@ body.light .session-bar-meta { color: #999; }
 body.light .readonly-footer { background: rgba(0,0,0,0.03); }
 body.light .text-input { background: #fff; border-color: #ddd; color: #333; }
 body.light .text-input::placeholder { color: #999; }
+body.light .sidebar-tab { color: #999; }
+body.light .sidebar-tab.active { color: #1d4ed8; }
+body.light .project-header { color: #555; }
+body.light .project-header.active { color: #1d4ed8; }
+body.light .chat-item { color: #666; }
+body.light .chat-item.active { color: #1d4ed8; background: rgba(37,99,235,0.08); }
+body.light .file-tree-item:hover { background: rgba(0,0,0,0.05); color: #333; }
+body.light .file-viewer-content { background: #f8f8f8; border-color: #e0e0e0; color: #333; }
+body.light .modal-content { background: #fff; border-color: #e0e0e0; }
+body.light .breadcrumb-sep { color: #ccc; }
 
 /* --- Mobile: sidebar as overlay --- */
 @media (max-width: 640px) {
@@ -523,4 +624,14 @@ body.light .text-input::placeholder { color: #999; }
   body:not(.dark) .readonly-footer { background: rgba(0,0,0,0.03); }
   body:not(.dark) .text-input { background: #fff; border-color: #ddd; color: #333; }
   body:not(.dark) .text-input::placeholder { color: #999; }
+  body:not(.dark) .sidebar-tab { color: #999; }
+  body:not(.dark) .sidebar-tab.active { color: #1d4ed8; }
+  body:not(.dark) .project-header { color: #555; }
+  body:not(.dark) .project-header.active { color: #1d4ed8; }
+  body:not(.dark) .chat-item { color: #666; }
+  body:not(.dark) .chat-item.active { color: #1d4ed8; background: rgba(37,99,235,0.08); }
+  body:not(.dark) .file-tree-item:hover { background: rgba(0,0,0,0.05); color: #333; }
+  body:not(.dark) .file-viewer-content { background: #f8f8f8; border-color: #e0e0e0; color: #333; }
+  body:not(.dark) .modal-content { background: #fff; border-color: #e0e0e0; }
+  body:not(.dark) .breadcrumb-sep { color: #ccc; }
 }
