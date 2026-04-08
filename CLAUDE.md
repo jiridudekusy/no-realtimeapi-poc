@@ -30,7 +30,12 @@ Low-latency voice assistant built on LiveKit (open-source). Pluggable STT/TTS pi
 - `src/agent.ts` — LiveKit agent, voice-only: listens for UserInputTranscribed, coalesces transcripts (2s debounce), sends to AgentSDKHandler, calls session.say() for TTS
 - `src/token-server.ts` — Express server: JWT tokens, static files from web/, session API, POST /api/chat for text input (SSE streaming)
 - `src/plugins/agent-sdk-handler.ts` — Wraps Claude Agent SDK v1 query() API with resume, interrupt, sentence splitting, LLM latency timing, onSessionIdCaptured/onAssistantMessage/onToolCall callbacks
-- `src/session-store.ts` — Session persistence (JSON files in data/sessions/), CRUD, fulltext search, session naming
+- `src/session-store.ts` — Session persistence (JSON files), CRUD, fulltext search, session naming
+- `src/project-store.ts` — Project CRUD, workspace directory management
+- `src/project-context.ts` — Tracks current project/session, navigation stack, loads project config (CLAUDE.md + .mcp.json)
+- `src/mcp/navigation-server.ts` — In-process MCP server with tools: list/create/switch project, list/switch/new chat, go_back, go_home
+- `src/navigation-handler.ts` — Logic for each navigation command (called by both agent and token-server)
+- `src/workspace-init.ts` — Workspace initialization, session migration from old format
 - `web/` — Vanilla HTML/JS client with livekit-client from CDN
 
 ## Dual input: voice and text
@@ -40,26 +45,48 @@ Low-latency voice assistant built on LiveKit (open-source). Pluggable STT/TTS pi
 - When switching from text to voice (Connect), web client sends `session_init` so agent loads the text session's Claude context.
 - Transcript coalescing: 2s debounce after last transcript (partial or final) before sending to Claude. Prevents breath pauses from splitting one thought into multiple queries.
 
+## Projects
+- Project = directory in `/app/workspace/` with sessions/, .mcp.json, CLAUDE.md, .claude/skills/
+- `_global` = home space (no project), always exists
+- `workspace` Docker volume at `/app/workspace`
+- Navigation via in-process MCP server (createSdkMcpServer from Agent SDK)
+- Navigation tools: list_projects, create_project, switch_project (info only), list_chats, switch_chat, new_chat, go_back, go_home
+- Context switch: closes Claude handler, creates new one with target project's cwd, MCP servers, CLAUDE.md
+- System prompt layered: global CLAUDE.md + project CLAUDE.md
+- MCP servers layered: global .mcp.json + project .mcp.json
+- Navigation stack for go_back (push on switch, pop on back)
+- Voice lock file prevents text writes to chat active in voice (HTTP 409)
+- Voice connection is persistent — projects/chats switch under it without reconnecting
+- API: /api/projects (list, create, get, update), /api/projects/:name/sessions/* (scoped)
+- /api/sessions backward compat → redirects to _global
+
 ## Session History
-- Sessions stored as JSON files in `data/sessions/` (index.json + per-session files)
+- Sessions stored per-project in workspace/{project}/sessions/ (index.json + per-session files)
 - Lazy session creation — sessions only created on first user message, not on agent startup
 - `claudeSessionId` persisted immediately on capture (not after response completes) to avoid race conditions
-- API: GET /api/sessions(?q=search), GET /api/sessions/:id, PATCH /api/sessions/:id (rename), POST /api/sessions/:id/generate-name
+- API: GET /api/projects/:name/sessions(?q=search), GET/PATCH, POST generate-name
 - Resume uses Claude Agent SDK `resume: claudeSessionId` for full context
 - Sidebar UI with fulltext search (desktop: always visible, mobile: hamburger overlay)
 - Read-only transcript view with Resume button for past sessions
 - Editable session names with ✨ AI auto-generation via Claude Agent SDK
-- `session-data` Docker volume persists transcripts in `/app/data/sessions`
 - Empty sessions (0 messages) filtered from sidebar listing
 
 ## Web UI
-- Full-viewport layout: sidebar scrolls independently, conversation fills available space, no page scroll
+- Tree sidebar: projects as collapsible groups, chats nested inside, Home (\_global) at top
+- Sidebar tabs: Chats (project tree) / Files (file browser)
+- Resizable sidebar: drag right edge, min 200px, chat pane min 300px, width persisted in localStorage
+- Breadcrumb session bar: `📁 project / chat name ✨ date · count` — project clickable
+- File browser: tree view, text files open inline, binary in new tab, upload button
+- File viewer: read-only `<pre>` in main area with Back to chat button
+- Project creation via inline form in sidebar
+- Project deletion: modal with name confirmation (type name to delete)
+- Session deletion: modal with yes/no confirmation
 - Compact toolbar: mic button + Connect/Disconnect/Hold + latency/cost metrics in one row
-- Session bar: editable name + ✨ generate + date/count meta + Resume (read-only mode)
 - Server Events log: collapsed by default, scrollable when expanded
 - Text input: always available, works without voice connection
 - Auto-disconnect voice when switching sessions in sidebar
 - User speech bubbles coalesced (finalized only when agent responds)
+- Error handling: all API operations show visible error messages (modals, inline, toast)
 
 ## Claude Agent SDK notes
 - v1 query() API — each turn = new query() call, clean lifecycle
@@ -91,7 +118,7 @@ Low-latency voice assistant built on LiveKit (open-source). Pluggable STT/TTS pi
 - shutdownProcessTimeout: 3s for faster job cleanup between sessions
 - Agent has `restart: unless-stopped` for auto-recovery
 - Claude auth persisted in `claude-auth` Docker volume
-- `session-data` Docker volume for conversation transcripts
+- `workspace` Docker volume for projects, sessions, and files (replaces old session-data)
 - Dev compose mounts `./src` and `./web` — restart (not rebuild) for code changes
 
 ## Tailscale HTTPS (for remote/mobile access)

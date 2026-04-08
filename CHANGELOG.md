@@ -1,5 +1,55 @@
 # Release Notes
 
+## v1.2.0 (2026-04-08)
+
+### Projects
+
+You can now organize conversations into project workspaces. Each project is a self-contained directory with its own chat history, files, MCP servers (``.mcp.json``), Claude instructions (``CLAUDE.md``), and skills.
+
+Navigation is fully voice-driven — say "switch to project X", "list my chats", "go back" — all while the voice connection stays active. No need to touch a screen.
+
+### Project UI
+
+The sidebar now shows a tree structure with collapsible project groups. Two tabs — **Chats** for conversation tree and **Files** for browsing project files. You can upload files, view text files inline, and open binary files in a new tab.
+
+Projects can be created via the **+ New Project** button (modal dialog) or by voice. Deletion requires typing the project name to confirm.
+
+### Breadcrumb Navigation
+
+The session bar now shows a breadcrumb path: ``📁 project / chat name``. The project name is clickable.
+
+### File Browser
+
+Browse project files in the sidebar **Files** tab. Text files (`.md`, `.json`, `.ts`, etc.) open inline in the main area with a read-only viewer. Binary files open in a new browser tab. Upload files via the upload button.
+
+### Resizable Sidebar
+
+Drag the right edge of the sidebar to resize. Width is persisted in localStorage. The chat pane has a minimum width of 300px.
+
+### Multi-Architecture Docker Build
+
+Docker images now build for both ``linux/amd64`` and ``linux/arm64`` (Apple Silicon, Raspberry Pi, etc.).
+
+### Upgrade Notes
+
+**Docker volume change.** The `session-data` volume is replaced by `workspace`:
+
+```yaml
+# In your docker-compose services.agent.volumes:
+- workspace:/app/workspace
+
+# In top-level volumes:
+volumes:
+  claude-auth:
+  workspace:
+```
+
+Existing sessions from v1.1.0 are automatically migrated into `workspace/_global/sessions/` on first start.
+
+**New dependency.** `multer` is added for file uploads — requires `docker compose build agent`.
+
+---
+
 ## v1.1.0 (2026-04-08)
 
 ### Text Input

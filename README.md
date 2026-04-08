@@ -84,6 +84,69 @@ To check logs:
 docker compose -f docker-compose.prod.yml logs agent -f
 ```
 
+## Apple Containers (macOS)
+
+Native alternative to Docker on macOS — each container runs in its own lightweight micro-VM via Virtualization.framework. Unlike Docker (which shares a single Linux kernel across all containers), Apple Containers provide hardware-level isolation per container, making it a more secure option.
+
+### Prerequisites
+
+- Mac with Apple Silicon, macOS 26 (Tahoe) or later
+- [Apple Containers installed and configured](https://www.notion.so/33c5769baa568168b918ec98c009cacb) — including DNS setup (`container-dns` domain)
+- [Tailscale](https://tailscale.com/) — ports must be bound to `127.0.0.1` to avoid conflicts
+
+### 1. Configure
+
+```bash
+cp .env.example .env
+# Edit .env and fill in your API keys (DEEPGRAM_API_KEY, OPENAI_API_KEY)
+```
+
+### 2. Start LiveKit
+
+```bash
+container run --detach --name livekit \
+  --publish 127.0.0.1:7880:7880 \
+  --publish 127.0.0.1:7881:7881 \
+  -v ./livekit.yaml.template:/etc/livekit.yaml.template:ro \
+  --entrypoint sh \
+  livekit/livekit-server \
+  -c 'IP=${LIVEKIT_NODE_IP:-127.0.0.1} && sed s/NODE_IP_PLACEHOLDER/$IP/ /etc/livekit.yaml.template > /tmp/livekit.yaml && exec /livekit-server --config=/tmp/livekit.yaml --dev'
+```
+
+### 3. Start the agent
+
+```bash
+container run --detach --name agent \
+  --publish 127.0.0.1:3001:3001 \
+  --env-file .env \
+  -e LIVEKIT_URL=ws://livekit:7880 \
+  ghcr.io/jiridudekusy/no-realtimeapi-poc:latest
+```
+
+### 4. Login to Claude
+
+```bash
+container exec -it agent claude login
+```
+
+### 5. Use it
+
+Open **http://localhost:3001**
+
+### Stopping
+
+```bash
+container stop agent && container rm agent
+container stop livekit && container rm livekit
+```
+
+### Troubleshooting
+
+- **"Address already in use"** — Tailscale conflict. Use `127.0.0.1:PORT:PORT` format in `--publish`.
+- **"flag provided but not defined: -c"** — Use `--entrypoint sh` separately, then `-c '...'` as an argument.
+- **Shell args with spaces** — Use `--flag=value` instead of `--flag value` inside entrypoint commands (Apple Container parses arguments differently than Docker).
+- **Container DNS not resolving** — Make sure `container-dns` domain is configured. See [setup guide](https://www.notion.so/33c5769baa568168b918ec98c009cacb).
+
 ## Remote access via Tailscale
 
 To use the voice assistant from a phone, tablet, or another computer on your network, you need HTTPS (browsers require it for microphone access on non-localhost origins).
@@ -144,6 +207,59 @@ The web client automatically detects HTTPS and uses `wss://` for the LiveKit con
 
 > **Note:** `tailscale serve` does not persist across reboots. You need to re-run the serve commands after restarting your machine.
 
+## Projects
+
+Projects let you organize conversations into separate workspaces. Each project has its own chat history, files, MCP servers, Claude instructions, and skills.
+
+### Use case: hands-free on the go
+
+You're driving to a meeting. With your earbuds in, you start a conversation:
+
+> **You:** "What projects do I have?"
+>
+> **Assistant:** "You have three projects: website-redesign, mobile-app, and quarterly-report."
+>
+> **You:** "Switch to quarterly report."
+>
+> **Assistant:** "Quarterly report has two recent chats: 'Revenue analysis' from yesterday with eight messages, and 'Executive summary draft' from three days ago with twelve messages. Want to continue one of these or start a new chat?"
+>
+> **You:** "Continue the revenue analysis."
+>
+> **Assistant:** "Switched. Last time we were looking at Q1 numbers. The revenue was up twelve percent. What would you like to focus on?"
+>
+> **You:** "Search the web for our competitor's latest earnings."
+
+The assistant searches, summarizes results. Then you switch:
+
+> **You:** "Go back. Switch to website-redesign, new chat."
+>
+> **Assistant:** "New chat in website-redesign. How can I help?"
+>
+> **You:** "Based on the brand guide in this project, suggest three color palettes."
+
+The assistant reads the brand guide file from the project directory and suggests palettes.
+
+Later at your desk, you open the web UI, see all your projects in the sidebar, browse the files the assistant created, review chat transcripts, and pick up where you left off — by text this time.
+
+### How it works
+
+- **Project = directory** in `/app/workspace/` with sessions, files, `.mcp.json`, `CLAUDE.md`, skills
+- **Navigation via voice tools**: Claude has built-in tools to list/create/switch projects and chats
+- **Voice stays connected** — projects and chats switch underneath without reconnecting
+- **Per-project configuration**: each project can have its own MCP servers (`.mcp.json`), system prompt (`CLAUDE.md`), and skills (`.claude/skills/`)
+- **Layered config**: global `.mcp.json` + project `.mcp.json` merge; same for `CLAUDE.md`
+- **Navigation stack**: `go_back` returns to the previous project/chat (like browser history)
+
+### Project UI
+
+- **Tree sidebar**: projects as collapsible groups with nested chats
+- **Chats/Files tabs**: switch between chat list and file browser
+- **File browser**: tree view, text files open inline, binary in new tab, upload button
+- **Breadcrumb**: `📁 project / chat name` in the header — project is clickable
+- **Resizable sidebar**: drag the right edge, width persisted
+- **Project creation**: `+ New Project` button or voice command
+- **Deletion**: projects (with name confirmation) and individual chats
+
 ## Web UI features
 
 - **Dual input**: type text or use voice — both share the same conversation context
@@ -166,16 +282,25 @@ The web client automatically detects HTTPS and uses `wss://` for the LiveKit con
 ├── livekit.yaml.template     # LiveKit config template
 ├── src/
 │   ├── agent.ts              # LiveKit agent — voice only (STT → Claude → TTS)
-│   ├── token-server.ts       # Express: JWT tokens, static files, session API, text chat
+│   ├── token-server.ts       # Express: JWT tokens, static files, session/project API, text chat
 │   ├── session-store.ts      # Session persistence (JSON files, index, search)
+│   ├── project-store.ts      # Project CRUD and workspace directory management
+│   ├── project-context.ts    # Current project/session tracking, navigation stack
+│   ├── navigation-handler.ts # Logic for project/chat navigation commands
+│   ├── workspace-init.ts     # Workspace initialization and session migration
+│   ├── mcp/
+│   │   └── navigation-server.ts  # In-process MCP server for navigation tools
 │   └── plugins/
 │       └── agent-sdk-handler.ts  # Claude Agent SDK wrapper (query + resume + callbacks)
 ├── web/
-│   ├── index.html            # Web client (sidebar + chat + toolbar)
+│   ├── index.html            # Web client (tree sidebar + chat + toolbar + modals)
 │   ├── style.css             # Full-viewport layout, responsive, light/dark
-│   ├── app.js                # LiveKit client, text chat, session management
+│   ├── app.js                # LiveKit client, text chat, project/session management
 │   └── favicon.png           # App icon
-├── data/sessions/            # Session storage (Docker volume in prod)
+├── workspace/                # Project workspaces (Docker volume)
+│   ├── projects.json         # Project index
+│   ├── _global/              # Home space (sessions, .mcp.json, CLAUDE.md)
+│   └── {project-name}/      # Project directories
 └── .env.example              # Environment template
 ```
 
@@ -222,7 +347,7 @@ When Claude needs to use a tool, it first announces what it will do (e.g., "Pod�
 - LiveKit health check ensures agent starts only after server is ready
 - Agent has `restart: unless-stopped` for auto-recovery
 - Claude auth persisted in `claude-auth` Docker volume (login once)
-- Session data persisted in `session-data` Docker volume
+- Workspace persisted in `workspace` Docker volume (projects, sessions, files)
 - Source dirs mounted as volumes for live editing (`src/`, `web/`) — restart, don't rebuild
 - LiveKit ports bound to `127.0.0.1` to avoid conflicts with Tailscale serve
 - VAD `minSilenceDuration: 1.5s` for natural Czech speech

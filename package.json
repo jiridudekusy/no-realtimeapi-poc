@@ -1,6 +1,6 @@
 {
   "name": "realtimeapi",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "",
   "main": "index.js",
   "directories": {
@@ -24,9 +24,11 @@
     "@livekit/agents-plugin-deepgram": "^1.2.3",
     "@livekit/agents-plugin-openai": "^1.2.3",
     "@livekit/agents-plugin-silero": "^1.2.3",
+    "@types/multer": "^2.1.0",
     "dotenv": "^17.4.0",
     "express": "^5.2.1",
     "livekit-server-sdk": "^2.15.0",
+    "multer": "^2.1.1",
     "openai": "^6.33.0"
   },
   "devDependencies": {
