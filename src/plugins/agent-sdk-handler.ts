@@ -19,7 +19,7 @@ const DANGEROUS_PATTERNS = [
   /wget.*\|\s*bash/i,
 ];
 
-const SYSTEM_INSTRUCTIONS = `You are a helpful voice assistant. Your responses will be converted to speech, so:
+export const SYSTEM_INSTRUCTIONS = `You are a helpful voice assistant. Your responses will be converted to speech, so:
 - Use plain conversational language without markdown formatting
 - Do not use bullet points, asterisks, pound signs, or other markdown
 - Keep responses concise — two to three sentences max unless the user asks for detail
@@ -38,6 +38,10 @@ interface AgentSDKHandlerOptions {
   onAssistantMessage?: (text: string) => void;
   onToolCall?: (name: string, input: string) => void;
   onSessionIdCaptured?: (claudeSessionId: string) => void;
+  mcpServers?: Record<string, unknown>;
+  additionalAllowedTools?: string[];
+  cwd?: string;
+  systemPrompt?: string;
 }
 
 export class AgentSDKHandler {
@@ -49,6 +53,10 @@ export class AgentSDKHandler {
   #onAssistantMessage: (text: string) => void;
   #onToolCall: (name: string, input: string) => void;
   #onSessionIdCaptured: (claudeSessionId: string) => void;
+  #mcpServers: Record<string, unknown>;
+  #additionalAllowedTools: string[];
+  #cwd: string | undefined;
+  #systemPrompt: string | undefined;
 
   constructor(opts: AgentSDKHandlerOptions = {}) {
     this.#model = opts.model || 'claude-sonnet-4-6';
@@ -57,6 +65,10 @@ export class AgentSDKHandler {
     this.#onAssistantMessage = opts.onAssistantMessage || (() => {});
     this.#onToolCall = opts.onToolCall || (() => {});
     this.#onSessionIdCaptured = opts.onSessionIdCaptured || (() => {});
+    this.#mcpServers = opts.mcpServers || {};
+    this.#additionalAllowedTools = opts.additionalAllowedTools || [];
+    this.#cwd = opts.cwd;
+    this.#systemPrompt = opts.systemPrompt;
   }
 
   get claudeSessionId(): string | null {
@@ -112,14 +124,18 @@ export class AgentSDKHandler {
       prompt: userText,
       options: {
         model: this.#model,
-        systemPrompt: SYSTEM_INSTRUCTIONS,
+        systemPrompt: this.#systemPrompt || SYSTEM_INSTRUCTIONS,
         abortController: this.#abortController,
         permissionMode: 'default',
-        allowedTools: ['Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'ToolSearch'],
+        allowedTools: [
+          'Read', 'Write', 'Edit', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'ToolSearch',
+          ...this.#additionalAllowedTools,
+        ],
         // Bash NOT in allowedTools — goes through canUseTool for dangerous pattern check
         canUseTool: this.#makeCanUseTool(),
-        mcpServers: {},
+        mcpServers: this.#mcpServers as any,
         extraArgs: { 'strict-mcp-config': null },
+        ...(this.#cwd ? { cwd: this.#cwd } : {}),
         ...(this.#sessionId ? { resume: this.#sessionId } : {}),
       },
     });

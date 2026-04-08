@@ -126,6 +126,17 @@ export class SessionStore {
     await this.#updateIndex(sessionId, { name });
   }
 
+  async deleteSession(sessionId: string): Promise<void> {
+    const filePath = path.join(this.#dir, `${sessionId}.json`);
+    try {
+      const { unlink } = await import('node:fs/promises');
+      await unlink(filePath);
+    } catch {}
+    const index = await this.#readIndex();
+    const filtered = index.filter(e => e.sessionId !== sessionId);
+    await this.#writeIndex(filtered);
+  }
+
   #extractPreview(session: SessionData): string {
     const firstUserMsg = session.messages.find(m => m.role === 'user');
     if (!firstUserMsg) return '(empty)';

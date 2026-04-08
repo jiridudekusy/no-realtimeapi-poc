@@ -10,8 +10,13 @@ import {
 import * as deepgram from '@livekit/agents-plugin-deepgram';
 import * as silero from '@livekit/agents-plugin-silero';
 import * as openai from '@livekit/agents-plugin-openai';
-import { AgentSDKHandler } from './plugins/agent-sdk-handler.js';
-import { SessionStore, type SessionMessage, type SessionData } from './session-store.js';
+import { AgentSDKHandler, SYSTEM_INSTRUCTIONS } from './plugins/agent-sdk-handler.js';
+import { type SessionMessage, type SessionData } from './session-store.js';
+import { ProjectStore } from './project-store.js';
+import { ProjectContext } from './project-context.js';
+import { initWorkspace, migrateOldSessions } from './workspace-init.js';
+import { createNavigationMcpServer, NAVIGATION_TOOL_NAMES } from './mcp/navigation-server.js';
+import { createNavigationHandler } from './navigation-handler.js';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -29,28 +34,33 @@ export default defineAgent({
       ctx.room.localParticipant?.publishData(data, { reliable: true });
     }
 
-    // Session store
-    const sessionStore = new SessionStore(
-      path.resolve(fileURLToPath(import.meta.url), '..', '..', 'data', 'sessions'),
-    );
-    await sessionStore.init();
+    // Workspace + project context
+    const workspaceDir = path.resolve(fileURLToPath(import.meta.url), '..', '..', 'workspace');
+    await initWorkspace(workspaceDir);
 
-    let currentSession: SessionData | null = null;
+    const oldSessionsDir = path.resolve(fileURLToPath(import.meta.url), '..', '..', 'data', 'sessions');
+    await migrateOldSessions(oldSessionsDir, workspaceDir);
+
+    const projectStore = new ProjectStore(workspaceDir);
+    await projectStore.init();
+
+    const projectCtx = new ProjectContext(projectStore, '_global');
+    await projectCtx.init();
 
     async function ensureSession(): Promise<SessionData> {
-      if (!currentSession) {
-        currentSession = await sessionStore.createSession();
-        console.log(`[Agent] New session created: ${currentSession.sessionId}`);
-        sendEvent({ type: 'session_info', sessionId: currentSession.sessionId });
+      if (!projectCtx.currentSession) {
+        projectCtx.currentSession = await projectCtx.sessionStore.createSession();
+        console.log(`[Agent] New session created: ${projectCtx.currentSession.sessionId}`);
+        sendEvent({ type: 'session_info', sessionId: projectCtx.currentSession.sessionId, projectName: projectCtx.currentProject });
       }
-      return currentSession;
+      return projectCtx.currentSession;
     }
 
     async function handleSessionIdCaptured(claudeSessionId: string) {
       const session = await ensureSession();
       if (!session.claudeSessionId) {
         session.claudeSessionId = claudeSessionId;
-        await sessionStore.setClaudeSessionId(session.sessionId, claudeSessionId);
+        await projectCtx.sessionStore.setClaudeSessionId(session.sessionId, claudeSessionId);
         console.log(`[Agent] Session ${session.sessionId} linked to Claude: ${claudeSessionId}`);
       }
     }
@@ -62,7 +72,7 @@ export default defineAgent({
         text,
         timestamp: new Date().toISOString(),
       };
-      await sessionStore.addMessage(session.sessionId, msg);
+      await projectCtx.sessionStore.addMessage(session.sessionId, msg);
     }
 
     async function handleToolCall(name: string, input: string) {
@@ -74,12 +84,85 @@ export default defineAgent({
         name,
         input,
       };
-      await sessionStore.addMessage(session.sessionId, msg);
+      await projectCtx.sessionStore.addMessage(session.sessionId, msg);
     }
 
+    // Voice lock file
+    const voiceLockFile = path.join(workspaceDir, '.voice-lock.json');
+    const { writeFile } = await import('node:fs/promises');
+
+    async function updateVoiceLock() {
+      const lock = projectCtx.currentSession
+        ? { projectName: projectCtx.currentProject, sessionId: projectCtx.currentSession.sessionId }
+        : null;
+      await writeFile(voiceLockFile, JSON.stringify(lock), 'utf-8');
+    }
+
+    // Deferred context switch — set during MCP tool callback, executed after turn completes
+    let pendingSwitch: { projectName: string; sessionId: string | null } | null = null;
+
+    async function performContextSwitch(projectName: string, sessionId: string | null) {
+      // Don't switch mid-query — defer until turn completes
+      pendingSwitch = { projectName, sessionId };
+      console.log(`[Agent] Context switch queued: ${projectName}/${sessionId || 'new'}`);
+    }
+
+    async function executePendingSwitch() {
+      if (!pendingSwitch) return;
+      const { projectName, sessionId } = pendingSwitch;
+      pendingSwitch = null;
+
+      claude.close();
+
+      await projectCtx.switchTo(projectName, sessionId || undefined);
+
+      const config = await projectCtx.loadProjectConfig();
+      const projectInfo = projectName === '_global'
+        ? 'You are in the HOME space (no project).'
+        : `You are in project "${projectName}".`;
+      const navPrompt = `${projectInfo}\nWhen switching projects or chats, ALWAYS confirm with the user before calling switch_chat, new_chat, go_back, or go_home. Tell them what will happen and ask for confirmation.`;
+      const fullPrompt = [SYSTEM_INSTRUCTIONS, config.systemPrompt, navPrompt].filter(Boolean).join('\n\n');
+
+      const navServer = createNavigationMcpServer(navHandler);
+
+      claude = new AgentSDKHandler({
+        model: 'claude-sonnet-4-6',
+        cwd: config.cwd,
+        systemPrompt: fullPrompt,
+        claudeSessionId: projectCtx.currentSession?.claudeSessionId || undefined,
+        mcpServers: { navigation: navServer, ...config.mcpConfig },
+        additionalAllowedTools: NAVIGATION_TOOL_NAMES,
+        onEvent: sendEvent,
+        onSessionIdCaptured: (id) => handleSessionIdCaptured(id),
+        onAssistantMessage: (text) => handleAssistantMessage(text),
+        onToolCall: (name, input) => handleToolCall(name, input),
+      });
+
+      await updateVoiceLock();
+
+      console.log(`[Agent] Context switched to ${projectName}/${sessionId || 'new'} (claude: ${projectCtx.currentSession?.claudeSessionId || 'none'})`);
+
+      sendEvent({
+        type: 'context_switched',
+        projectName: projectCtx.currentProject,
+        sessionId: projectCtx.currentSession?.sessionId || null,
+      });
+    }
+
+    const navHandler = createNavigationHandler(projectStore, projectCtx, performContextSwitch);
+
     // Claude Agent SDK handler — lives outside the LiveKit pipeline
+    const initialConfig = await projectCtx.loadProjectConfig();
+    const navPrompt = 'When switching projects or chats, ALWAYS confirm with the user before calling switch_chat, new_chat, go_back, or go_home. Tell them what will happen and ask for confirmation.';
+    const initialPrompt = [SYSTEM_INSTRUCTIONS, initialConfig.systemPrompt, navPrompt].filter(Boolean).join('\n\n');
+    const navServer = createNavigationMcpServer(navHandler);
+
     let claude = new AgentSDKHandler({
       model: 'claude-sonnet-4-6',
+      cwd: initialConfig.cwd,
+      systemPrompt: initialPrompt,
+      mcpServers: { navigation: navServer, ...initialConfig.mcpConfig },
+      additionalAllowedTools: NAVIGATION_TOOL_NAMES,
       onEvent: sendEvent,
       onSessionIdCaptured: (id) => handleSessionIdCaptured(id),
       onAssistantMessage: (text) => handleAssistantMessage(text),
@@ -117,10 +200,11 @@ export default defineAgent({
       sendEvent(payload);
     });
 
-    agentSession.on(voice.AgentSessionEventTypes.Close, (ev) => {
+    agentSession.on(voice.AgentSessionEventTypes.Close, async (ev) => {
       console.log('Session closed:', ev.reason, ev.error);
       sendEvent({ type: 'error', reason: ev.reason, error: ev.error ? String(ev.error) : null });
       claude.interrupt();
+      await writeFile(voiceLockFile, 'null', 'utf-8').catch(() => {});
     });
 
     // --- LLM Hold: buffer transcripts until released ---
@@ -144,23 +228,11 @@ export default defineAgent({
             processUserText(combined);
           }
         }
-        if (msg.type === 'session_init' && msg.sessionId) {
-          console.log(`[Agent] session_init received for: ${msg.sessionId}`);
-          const existing = await sessionStore.getSession(msg.sessionId as string);
-          console.log(`[Agent] Session lookup: ${existing ? `found (claude: ${existing.claudeSessionId})` : 'NOT FOUND'}`);
-          if (existing) {
-            currentSession = existing;
-            console.log(`[Agent] Resuming session: ${existing.sessionId} (claude: ${existing.claudeSessionId})`);
-            claude.close();
-            claude = new AgentSDKHandler({
-              model: 'claude-sonnet-4-6',
-              claudeSessionId: existing.claudeSessionId || undefined,
-              onEvent: sendEvent,
-              onAssistantMessage: (text) => handleAssistantMessage(text),
-              onToolCall: (name, input) => handleToolCall(name, input),
-            });
-            sendEvent({ type: 'session_info', sessionId: existing.sessionId });
-          }
+        if (msg.type === 'session_init') {
+          const projectName = (msg.projectName as string) || '_global';
+          const sessionId = msg.sessionId as string | undefined;
+          console.log(`[Agent] session_init: project=${projectName}, session=${sessionId}`);
+          await performContextSwitch(projectName, sessionId || null);
         }
       } catch (err) {
         console.error('[Agent] dataReceived error:', err);
@@ -178,7 +250,7 @@ export default defineAgent({
           text: userText,
           timestamp: new Date().toISOString(),
         };
-        return sessionStore.addMessage(session.sessionId, userMsg);
+        return projectCtx.sessionStore.addMessage(session.sessionId, userMsg);
       }).catch(err =>
         console.error('[Agent] Failed to persist user message:', err)
       );
@@ -226,8 +298,9 @@ export default defineAgent({
       }).catch((err) => {
         console.error('[Agent] Agent SDK error:', err);
         sendEvent({ type: 'agent_sdk', event: 'error', error: String(err) });
-      }).finally(() => {
+      }).finally(async () => {
         processing = false;
+        await executePendingSwitch();
       });
     }
 
@@ -291,7 +364,11 @@ export default defineAgent({
     await agentSession.start({ agent, room: ctx.room });
     await ctx.waitForParticipant();
     // Signal that agent is ready — web client uses this to send session_init for resume
-    sendEvent({ type: 'session_info', sessionId: (currentSession as SessionData | null)?.sessionId ?? null });
+    sendEvent({
+      type: 'session_info',
+      sessionId: projectCtx.currentSession?.sessionId ?? null,
+      projectName: projectCtx.currentProject,
+    });
   },
 });
 
