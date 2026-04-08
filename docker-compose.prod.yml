@@ -34,7 +34,7 @@ services:
       - LIVEKIT_URL=ws://livekit:7880
     volumes:
       - claude-auth:/home/node/.claude
-      - session-data:/app/data/sessions
+      - workspace:/app/workspace
     depends_on:
       livekit:
         condition: service_healthy
@@ -42,4 +42,4 @@ services:
 
 volumes:
   claude-auth:
-  session-data:
+  workspace:
