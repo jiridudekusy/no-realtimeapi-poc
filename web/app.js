@@ -499,6 +499,7 @@ async function sendTextMessage() {
 
   // Show user message in chat
   addMessage('user', text);
+  showThinking();
 
   try {
     const res = await fetch('/api/chat', {
@@ -538,6 +539,7 @@ async function sendTextMessage() {
           sessionState.currentSessionId = data.sessionId;
           fetchProjectTree();
         } else if (data.type === 'text') {
+          removeThinking();
           if (!state.currentAssistMsg) {
             // Reset latency for text response (no STT/TTS)
             latency.stt = 0; latency.llm = 0; latency.tts = 0;
@@ -583,6 +585,8 @@ async function sendTextMessage() {
           fetchProjectTree();
           updateSessionBar();
         } else if (data.type === 'error') {
+          removeThinking();
+          cancelThinkingSound();
           addMessage('assistant', `Error: ${data.error}`);
         }
       }
@@ -620,6 +624,91 @@ function addMessage(role, text, opts = {}) {
   $('#conversation').scrollTop = $('#conversation').scrollHeight;
 
   return div;
+}
+
+// --- Thinking audio (voice mode only) ---
+let thinkingAudioCtx = null;
+let thinkingInterval = null;
+let thinkingSoundTimer = null;
+
+function scheduleThinkingSound(delayMs = 0) {
+  cancelThinkingSound();
+  if (!state.connected) return;
+  if (delayMs <= 0) {
+    startThinkingSound();
+  } else {
+    thinkingSoundTimer = setTimeout(() => {
+      thinkingSoundTimer = null;
+      startThinkingSound();
+    }, delayMs);
+  }
+}
+
+function cancelThinkingSound() {
+  if (thinkingSoundTimer) { clearTimeout(thinkingSoundTimer); thinkingSoundTimer = null; }
+  stopThinkingSound();
+}
+
+function playThinkingPulse() {
+  if (!thinkingAudioCtx) return;
+  const ctx = thinkingAudioCtx;
+  const now = ctx.currentTime;
+  const dur = 2.5;
+  const bufSize = ctx.sampleRate * dur;
+  const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(200, now);
+  filter.frequency.linearRampToValueAtTime(1200, now + 1.2);
+  filter.frequency.linearRampToValueAtTime(200, now + dur);
+  filter.Q.value = 1;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.025, now + 0.5);
+  gain.gain.setValueAtTime(0.025, now + 1.8);
+  gain.gain.linearRampToValueAtTime(0, now + dur);
+  src.connect(filter).connect(gain).connect(ctx.destination);
+  src.start(now); src.stop(now + dur);
+}
+
+function startThinkingSound() {
+  stopThinkingSound();
+  try {
+    thinkingAudioCtx = new AudioContext();
+    playThinkingPulse();
+    thinkingInterval = setInterval(playThinkingPulse, 3500);
+  } catch {}
+}
+
+function stopThinkingSound() {
+  if (thinkingInterval) { clearInterval(thinkingInterval); thinkingInterval = null; }
+  if (thinkingAudioCtx) { thinkingAudioCtx.close().catch(() => {}); thinkingAudioCtx = null; }
+}
+
+function showThinking() {
+  removeThinking();
+  const div = document.createElement('div');
+  div.className = 'msg assistant thinking';
+  div.id = 'thinking-indicator';
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.textContent = 'Asistent';
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  body.innerHTML = '<span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span>';
+  div.appendChild(meta);
+  div.appendChild(body);
+  $('#conversation').appendChild(div);
+  $('#conversation').scrollTop = $('#conversation').scrollHeight;
+}
+
+function removeThinking() {
+  const el = document.getElementById('thinking-indicator');
+  if (el) el.remove();
 }
 
 function updateMessage(el, text, opts = {}) {
@@ -727,6 +816,8 @@ $('#mic-btn').addEventListener('click', async () => {
 
 room.on(RoomEvent.Disconnected, () => {
   state.connected = false;
+  cancelThinkingSound();
+  removeThinking();
   setStatus('Disconnected', 'disconnected');
   $('#connect-btn').disabled = false;
   $('#disconnect-btn').disabled = true;
@@ -767,6 +858,8 @@ room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
 
   for (const seg of segments) {
     if (isAgent) {
+      removeThinking();
+      cancelThinkingSound();
       // Finalize user bubble when agent starts responding
       if (state.currentUserMsg) {
         state.currentUserMsg = null;
@@ -785,6 +878,9 @@ room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
         setStatus('Listening', 'listening');
       }
     } else {
+      // User is speaking — stop any thinking sound
+      cancelThinkingSound();
+      removeThinking();
       if (!state.currentUserMsg) {
         // Reset latencies when new user turn starts
         latency.stt = 0; latency.llm = 0; latency.tts = 0;
@@ -908,9 +1004,11 @@ room.on(RoomEvent.DataReceived, async (data, participant) => {
       logEvent('stt', msg.transcript);
     }
 
-    // Tool call
+    // Tool call — agent is working, schedule thinking sound with delay
     else if (msg.type === 'tool_call') {
       logEvent('tool_call', `${msg.name}: ${msg.input}`);
+      showThinking();
+      scheduleThinkingSound(500);
     }
 
     // Tool result
@@ -938,9 +1036,17 @@ room.on(RoomEvent.DataReceived, async (data, participant) => {
       logEvent('agent', `${msg.event}${msg.state ? ': ' + msg.state : ''}${msg.cost != null ? ' ($' + msg.cost.toFixed(4) + ')' : ''}${msg.error ? ': ' + msg.error : ''}`);
     }
 
-    // Tool use (Claude Agent SDK)
+    // Tool use (Claude Agent SDK) — agent is working, schedule thinking sound with delay
     else if (msg.type === 'tool_use') {
       logEvent('tool_call', `${msg.title || msg.tool}: ${msg.input}`);
+      showThinking();
+      scheduleThinkingSound(500);
+    }
+
+    // Thinking indicator (agent started processing via voice) — immediate
+    else if (msg.type === 'thinking') {
+      showThinking();
+      scheduleThinkingSound(0);
     }
 
     // Tool denied

@@ -120,6 +120,13 @@ When releasing a new version ("vydej verzi", "release"):
 - canUseTool blocks dangerous patterns: rm -rf, sudo, mkfs, dd if=, >/dev/, chmod 777, curl|bash, wget|bash
 - Container runs as non-root user `node` (required for Claude Code permissions)
 
+## Thinking feedback
+- Visual: pulsing dots bubble (both text and voice)
+- Audio: "Ocean Sweep" sound loop (voice mode only, Web Audio API, no file)
+- Triggers: immediately on LLM send (`thinking` event), with 0.5s delay on tool calls
+- Stops: when agent speaks, user speaks, or disconnect
+- Agent sends `{ type: 'thinking' }` via DataReceived at start of processUserText
+
 ## Latency tracking
 - STT: computed as time from first partial transcript to final transcript (Deepgram streaming durationMs is always 0)
 - LLM: time from query start to first sentence (tracked in agent-sdk-handler)

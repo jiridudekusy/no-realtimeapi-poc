@@ -255,6 +255,8 @@ export default defineAgent({
         console.error('[Agent] Failed to persist user message:', err)
       );
 
+      sendEvent({ type: 'thinking' });
+
       // If we're already processing, abort previous (barge-in)
       if (processing) {
         console.log('[Agent] Barge-in detected, interrupting previous response');

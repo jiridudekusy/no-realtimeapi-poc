@@ -1,5 +1,21 @@
 # Release Notes
 
+## v1.5.0 (2026-04-09)
+
+### Thinking Feedback
+
+Visual and audio feedback while waiting for the AI to respond.
+
+- **Thinking bubble**: Pulsing dots appear immediately when a message is sent to Claude, replaced by the actual response
+- **Thinking sound** (voice mode): "Ocean Sweep" — ambient noise loop plays while the user waits
+  - Starts immediately when text is sent to Claude (after 2s coalesce)
+  - Starts with 0.5s delay during tool calls (AI may speak first)
+  - Stops instantly when the agent speaks, user speaks, or voice disconnects
+  - Text-only chat shows dots but no sound
+- Works across the full AI turn — including pauses during tool execution (WebSearch, Bash, etc.)
+
+---
+
 ## v1.4.0 (2026-04-09)
 
 ### Sync Chat API
