@@ -11,6 +11,8 @@ import type { SessionMessage } from './session-store.js';
 import { createNavigationMcpServer, NAVIGATION_TOOL_NAMES } from './mcp/navigation-server.js';
 import { ProjectStore } from './project-store.js';
 import { initWorkspace } from './workspace-init.js';
+import { loadPipelineConfig } from './pipeline-config.js';
+import { createLLMHandler } from './plugins/llm-factory.js';
 
 const app = express();
 
@@ -356,12 +358,21 @@ app.post('/api/chat', async (req, res) => {
   });
   const navServer = createNavigationMcpServer(navHandler);
 
+  // Load pipeline config for this project
+  const chatPipelineConfig = await loadPipelineConfig(workspaceDir, projectName);
+
+  // Build message history for non-Claude backends
+  const history = (session.messages || [])
+    .filter((m: SessionMessage) => m.role !== 'tool')
+    .map((m: SessionMessage) => ({ role: m.role, text: m.text }));
+
   // Create handler for this request
-  const claude = new AgentSDKHandler({
-    model: 'claude-sonnet-4-6',
+  const claude = createLLMHandler(chatPipelineConfig.llm, {
     claudeSessionId: session.claudeSessionId || undefined,
     mcpServers: { navigation: navServer },
     additionalAllowedTools: NAVIGATION_TOOL_NAMES,
+    navigationHandler: navHandler,
+    messageHistory: history,
     onEvent: (event) => {
       // Forward events to client for server event log
       res.write(`data: ${JSON.stringify({ type: 'event', event })}\n\n`);
@@ -456,14 +467,23 @@ app.post('/api/projects/:name/chat', async (req, res) => {
   const navHandler = createNavigationHandler(projectStore, tempCtx, async () => {});
   const navServer = createNavigationMcpServer(navHandler);
 
+  // Load pipeline config for this project
+  const syncPipelineConfig = await loadPipelineConfig(workspaceDir, projectName);
+
+  // Build message history for non-Claude backends
+  const syncHistory = (session.messages || [])
+    .filter((m: SessionMessage) => m.role !== 'tool')
+    .map((m: SessionMessage) => ({ role: m.role, text: m.text }));
+
   // Collect full response
   const sentences: string[] = [];
 
-  const claude = new AgentSDKHandler({
-    model: 'claude-sonnet-4-6',
+  const claude = createLLMHandler(syncPipelineConfig.llm, {
     claudeSessionId: session.claudeSessionId || undefined,
     mcpServers: { navigation: navServer },
     additionalAllowedTools: NAVIGATION_TOOL_NAMES,
+    navigationHandler: navHandler,
+    messageHistory: syncHistory,
     onSessionIdCaptured: async (claudeSessionId) => {
       if (!session.claudeSessionId) {
         session.claudeSessionId = claudeSessionId;
