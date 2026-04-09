@@ -1,5 +1,18 @@
 # Release Notes
 
+## v1.3.0 (2026-04-09)
+
+### Project Display Names
+
+Project names can now contain diacritics and special characters (e.g. "Můj Český Projekt"). The directory name is auto-generated as a safe slug (`muj-cesky-projekt`) using NFD transliteration — Czech characters like č, ř, ž are converted to their ASCII equivalents instead of being stripped.
+
+- Directory names restricted to `a-zA-Z0-9` and hyphens
+- Sidebar, breadcrumb, and navigation all show the display name
+- Delete confirmation shows both display name and slug
+- Existing projects without `displayName` gracefully fall back to slug
+
+---
+
 ## v1.2.0 (2026-04-08)
 
 ### Projects
