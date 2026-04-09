@@ -30,6 +30,17 @@ export async function initWorkspace(workspaceDir: string): Promise<void> {
     await writeFile(projectsPath, '[]', 'utf-8');
   }
 
+  const pipelinePath = path.join(workspaceDir, 'pipeline.json');
+  if (!existsSync(pipelinePath)) {
+    const defaultPipeline = {
+      vad: { provider: 'silero', minSilenceDuration: 1.5 },
+      stt: { provider: 'deepgram', model: 'nova-3', language: 'cs' },
+      tts: { provider: 'openai', model: 'tts-1', voice: 'nova' },
+      llm: { provider: 'agent-sdk', model: 'claude-sonnet-4-6' },
+    };
+    await writeFile(pipelinePath, JSON.stringify(defaultPipeline, null, 2), 'utf-8');
+  }
+
   console.log(`[Workspace] Initialized at ${workspaceDir}`);
 }
 
