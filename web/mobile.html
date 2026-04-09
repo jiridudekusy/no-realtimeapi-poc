@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#111">
+<title>Voice</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%; background: #111; color: #ccc;
+  font-family: system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none; user-select: none;
+}
+body {
+  display: flex; flex-direction: column;
+  padding: env(safe-area-inset-top, 8px) 12px env(safe-area-inset-bottom, 8px) 12px;
+  height: 100dvh;
+}
+
+/* Project header */
+#project-bar {
+  padding: 10px 12px; text-align: center; cursor: pointer;
+  color: #999; font-size: 13px;
+}
+#project-bar:active { opacity: 0.7; }
+
+/* Transcript area */
+#transcript-area {
+  background: #1a1a2e; border-radius: 16px; padding: 20px 16px;
+  text-align: center; margin-top: 8px;
+}
+#status-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 1px;
+  margin-bottom: 8px; color: #666;
+}
+#transcript-text {
+  font-size: 18px; line-height: 1.4; min-height: 28px;
+  color: #ccc; word-break: break-word;
+  max-height: 100px; overflow-y: auto;
+  scrollbar-width: none;
+}
+#transcript-text::-webkit-scrollbar { display: none; }
+
+/* Thinking dots */
+.thinking-dots { display: flex; gap: 6px; justify-content: center; align-items: center; height: 28px; }
+.thinking-dots span {
+  width: 7px; height: 7px; border-radius: 50%; background: #f59e0b;
+  animation: tdot 1.4s ease-in-out infinite;
+}
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes tdot {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1.1); }
+}
+
+/* Buttons */
+#controls { display: flex; flex-direction: column; gap: 10px; padding: 14px 0 0; }
+.ctrl-btn {
+  width: 100%; padding: 16px; border: none; border-radius: 14px;
+  font-family: system-ui, sans-serif; font-size: 16px;
+  cursor: pointer; -webkit-appearance: none;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.ctrl-btn:active { opacity: 0.85; transform: scale(0.98); }
+
+#mute-btn { background: #2a2a4a; color: #ccc; }
+#mute-btn.muted { background: #4a2020; color: #f87171; }
+#hold-btn { background: #2a2a4a; color: #ccc; }
+#hold-btn.held { background: #4a3a10; color: #f59e0b; }
+#connect-btn { background: #22c55e; color: white; font-size: 18px; font-weight: 600; padding: 18px; }
+#connect-btn.connected { background: #ef4444; }
+#mute-btn:disabled, #hold-btn:disabled { opacity: 0.35; }
+
+/* Metrics */
+#metrics { text-align: center; font-size: 12px; color: #666; padding: 8px 0; min-height: 24px; }
+
+/* Spacer pushes everything up */
+.spacer { flex: 1; }
+
+/* Project modal */
+#project-modal {
+  display: none; position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.6); align-items: flex-end; justify-content: center;
+}
+#project-modal.open { display: flex; }
+#project-sheet {
+  background: #1a1a2e; border-radius: 16px 16px 0 0;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  width: 100%; max-height: 50vh; overflow-y: auto;
+}
+#project-sheet h3 { font-size: 13px; color: #666; margin-bottom: 10px; font-weight: 600; }
+.pitem {
+  padding: 12px; border-radius: 10px; cursor: pointer; margin-bottom: 4px;
+}
+.pitem:active { background: #252540; }
+.pitem.active { background: #252540; }
+.pitem-name { font-size: 15px; color: #ccc; }
+.pitem-desc { font-size: 12px; color: #666; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<div id="project-bar">📁 Home ▾</div>
+
+<div id="transcript-area">
+  <div id="status-label">DISCONNECTED</div>
+  <div id="transcript-text">Tap Connect to start</div>
+</div>
+
+<div id="controls">
+  <button id="mute-btn" class="ctrl-btn" disabled>🎙️ Mute</button>
+  <button id="hold-btn" class="ctrl-btn" disabled>🧠 LLM: Auto</button>
+  <button id="connect-btn" class="ctrl-btn">Connect</button>
+</div>
+
+<div id="metrics"></div>
+<div class="spacer"></div>
+
+<div id="project-modal">
+  <div id="project-sheet">
+    <h3>Projects</h3>
+    <div id="project-list"></div>
+  </div>
+</div>
+
+<script type="module">
+import {
+  Room, RoomEvent, Track,
+} from 'https://cdn.jsdelivr.net/npm/livekit-client@2/dist/livekit-client.esm.mjs';
+
+const room = new Room({ adaptiveStream: true, dynacast: true });
+const $ = s => document.querySelector(s);
+
+const S = {
+  connected: false, muted: false, held: false,
+  project: localStorage.getItem('mobile_project') || '_global',
+  sessionId: null, pendingResume: null, pendingProject: null,
+  userFinal: '',
+};
+
+// --- Thinking sound (Ocean Sweep) ---
+let tCtx = null, tInt = null, tTimer = null;
+function playPulse() {
+  if (!tCtx) return;
+  const c = tCtx, n = c.currentTime, d = 2.5, sz = c.sampleRate * d;
+  const b = c.createBuffer(1, sz, c.sampleRate), ch = b.getChannelData(0);
+  for (let i = 0; i < sz; i++) ch[i] = Math.random() * 2 - 1;
+  const s = c.createBufferSource(); s.buffer = b;
+  const f = c.createBiquadFilter(); f.type = 'bandpass';
+  f.frequency.setValueAtTime(200, n); f.frequency.linearRampToValueAtTime(1200, n+1.2);
+  f.frequency.linearRampToValueAtTime(200, n+d); f.Q.value = 1;
+  const g = c.createGain();
+  g.gain.setValueAtTime(0, n); g.gain.linearRampToValueAtTime(0.025, n+0.5);
+  g.gain.setValueAtTime(0.025, n+1.8); g.gain.linearRampToValueAtTime(0, n+d);
+  s.connect(f).connect(g).connect(c.destination); s.start(n); s.stop(n+d);
+}
+function startSound() { stopSound(); try { tCtx = new AudioContext(); playPulse(); tInt = setInterval(playPulse, 3500); } catch {} }
+function stopSound() { if (tInt) { clearInterval(tInt); tInt = null; } if (tCtx) { tCtx.close().catch(()=>{}); tCtx = null; } }
+function schedSound(ms=0) { cancelSound(); if (!S.connected) return; if (ms<=0) startSound(); else tTimer = setTimeout(()=>{ tTimer=null; startSound(); }, ms); }
+function cancelSound() { if (tTimer) { clearTimeout(tTimer); tTimer=null; } stopSound(); }
+
+// --- UI ---
+function setState(s, text) {
+  const label = $('#status-label'), txt = $('#transcript-text');
+  const colors = { disconnected:'#666', listening:'#7c83ff', thinking:'#f59e0b', speaking:'#22c55e' };
+  label.textContent = s.toUpperCase();
+  label.style.color = colors[s] || '#666';
+  if (text !== undefined) {
+    if (s === 'thinking') {
+      txt.innerHTML = '<div class="thinking-dots"><span></span><span></span><span></span></div>';
+    } else {
+      txt.textContent = text;
+    }
+  }
+}
+
+function updateProject() {
+  const bar = $('#project-bar');
+  if (S.project === '_global') {
+    bar.textContent = '🏠 Home ▾';
+  } else {
+    bar.textContent = '📁 ' + S.project + ' ▾';
+    fetch('/api/projects/' + S.project).then(r=>r.ok?r.json():null).then(p=>{
+      if (p) bar.textContent = '📁 ' + (p.displayName || p.name) + ' ▾';
+    }).catch(()=>{});
+  }
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// --- Project modal ---
+$('#project-bar').addEventListener('click', async () => {
+  const modal = $('#project-modal');
+  if (modal.classList.contains('open')) { modal.classList.remove('open'); return; }
+  modal.classList.add('open');
+  try {
+    const res = await fetch('/api/projects');
+    const projects = res.ok ? await res.json() : [];
+    const list = $('#project-list');
+    list.innerHTML = '';
+    const home = document.createElement('div');
+    home.className = 'pitem' + (S.project === '_global' ? ' active' : '');
+    home.innerHTML = '<div class="pitem-name">🏠 Home</div>';
+    home.onclick = () => pickProject('_global');
+    list.appendChild(home);
+    for (const p of projects) {
+      const el = document.createElement('div');
+      el.className = 'pitem' + (S.project === p.name ? ' active' : '');
+      el.innerHTML = '<div class="pitem-name">📁 ' + esc(p.displayName || p.name) + '</div>' +
+        (p.description ? '<div class="pitem-desc">' + esc(p.description) + '</div>' : '');
+      el.onclick = () => pickProject(p.name);
+      list.appendChild(el);
+    }
+  } catch {}
+});
+
+$('#project-modal').addEventListener('click', (e) => {
+  if (e.target === $('#project-modal')) $('#project-modal').classList.remove('open');
+});
+
+function pickProject(name) {
+  $('#project-modal').classList.remove('open');
+  if (name === S.project) return;
+  S.project = name;
+  S.sessionId = null;
+  localStorage.setItem('mobile_project', name);
+  updateProject();
+  if (S.connected) {
+    room.disconnect();
+  }
+}
+
+// --- Connect ---
+$('#connect-btn').addEventListener('click', async () => {
+  if (S.connected) { console.log('[Mobile] Disconnecting'); room.disconnect(); return; }
+  try {
+    console.log('[Mobile] Connecting... project=' + S.project);
+    $('#connect-btn').textContent = 'Connecting...';
+    S.pendingResume = S.sessionId || '__new__';
+    S.pendingProject = S.project;
+    const res = await fetch('/api/token');
+    const { token } = await res.json();
+    const ws = location.protocol === 'https:' ? 'wss' : 'ws';
+    const url = ws + '://' + location.hostname + ':7880';
+    console.log('[Mobile] LiveKit URL: ' + url);
+    await room.connect(url, token);
+    console.log('[Mobile] Connected to room');
+    S.connected = true;
+    console.log('[Mobile] Enabling microphone...');
+    await room.localParticipant.setMicrophoneEnabled(true);
+    console.log('[Mobile] Microphone enabled');
+    $('#connect-btn').textContent = 'Disconnect';
+    $('#connect-btn').classList.add('connected');
+    $('#mute-btn').disabled = false;
+    $('#hold-btn').disabled = false;
+    setState('listening', 'Listening...');
+  } catch (err) {
+    console.error('[Mobile] Connect error:', err);
+    $('#connect-btn').textContent = 'Connect';
+    setState('disconnected', 'Connection failed');
+  }
+});
+
+// --- Mute ---
+$('#mute-btn').addEventListener('click', async () => {
+  if (!S.connected) return;
+  S.muted = !S.muted;
+  await room.localParticipant.setMicrophoneEnabled(!S.muted);
+  const btn = $('#mute-btn');
+  btn.classList.toggle('muted', S.muted);
+  btn.textContent = S.muted ? '🔇 Muted' : '🎙️ Mute';
+});
+
+// --- Hold ---
+$('#hold-btn').addEventListener('click', () => {
+  if (!S.connected) return;
+  S.held = !S.held;
+  room.localParticipant.publishData(
+    new TextEncoder().encode(JSON.stringify({ type: S.held ? 'hold_llm' : 'release_llm' })),
+    { reliable: true }
+  );
+  const btn = $('#hold-btn');
+  btn.classList.toggle('held', S.held);
+  btn.textContent = S.held ? '🧠 LLM: Hold' : '🧠 LLM: Auto';
+});
+
+// --- LiveKit events ---
+room.on(RoomEvent.Disconnected, () => {
+  console.log('[Mobile] Disconnected');
+  S.connected = false; S.muted = false; S.held = false;
+  cancelSound();
+  $('#connect-btn').textContent = 'Connect';
+  $('#connect-btn').classList.remove('connected');
+  $('#mute-btn').disabled = true; $('#hold-btn').disabled = true;
+  $('#mute-btn').classList.remove('muted'); $('#mute-btn').textContent = '🎙️ Mute';
+  $('#hold-btn').classList.remove('held'); $('#hold-btn').textContent = '🧠 LLM: Auto';
+  setState('disconnected', 'Tap Connect to start');
+  $('#metrics').textContent = '';
+});
+
+room.on(RoomEvent.TranscriptionReceived, (segments, participant) => {
+  const isAgent = participant?.identity?.startsWith('agent');
+  console.log('[Mobile] Transcription:', isAgent ? 'agent' : 'user', segments.map(s => s.text).join(' '));
+  for (const seg of segments) {
+    if (isAgent) {
+      cancelSound();
+      setState('speaking', seg.text);
+    } else {
+      cancelSound();
+      if (seg.final) {
+        S.userFinal += (S.userFinal ? ' ' : '') + seg.text;
+        setState('listening', S.userFinal);
+      } else {
+        setState('listening', S.userFinal ? S.userFinal + ' ' + seg.text : seg.text);
+      }
+    }
+  }
+});
+
+room.on(RoomEvent.DataReceived, (data) => {
+  try {
+    const msg = JSON.parse(new TextDecoder().decode(data));
+    console.log('[Mobile] Data:', msg.type, msg);
+
+    if (msg.type === 'thinking') {
+      S.userFinal = '';
+      setState('thinking');
+      schedSound(0);
+    }
+    else if (msg.type === 'tool_call' || msg.type === 'tool_use') {
+      setState('thinking');
+      schedSound(500);
+    }
+    else if (msg.type === 'metrics' && msg.llmDuration != null) {
+      $('#metrics').textContent = 'LLM ' + (msg.llmDuration / 1000).toFixed(1) + 's';
+    }
+    else if (msg.type === 'session_info') {
+      if (S.pendingResume) {
+        const rid = S.pendingResume;
+        S.pendingResume = null;
+        room.localParticipant.publishData(
+          new TextEncoder().encode(JSON.stringify({
+            type: 'session_init',
+            sessionId: rid === '__new__' ? undefined : rid,
+            projectName: S.pendingProject || '_global',
+          })),
+          { reliable: true }
+        );
+        return;
+      }
+      S.sessionId = msg.sessionId;
+      if (msg.projectName) { S.project = msg.projectName; updateProject(); }
+    }
+    else if (msg.type === 'context_switched') {
+      S.project = msg.projectName || '_global';
+      S.sessionId = msg.sessionId;
+      updateProject();
+    }
+  } catch {}
+});
+
+room.on(RoomEvent.TrackSubscribed, (track) => {
+  console.log('[Mobile] Track subscribed:', track.kind);
+  if (track.kind === Track.Kind.Audio) {
+    const el = track.attach(); el.style.display = 'none'; document.body.appendChild(el);
+  }
+});
+room.on(RoomEvent.TrackUnsubscribed, (track) => { track.detach().forEach(el => el.remove()); });
+
+// Init
+updateProject();
+</script>
+</body>
+</html>

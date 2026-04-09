@@ -130,6 +130,15 @@ When releasing a new version ("vydej verzi", "release"):
 - canUseTool blocks dangerous patterns: rm -rf, sudo, mkfs, dd if=, >/dev/, chmod 777, curl|bash, wget|bash
 - Container runs as non-root user `node` (required for Claude Code permissions)
 
+## Mobile UI
+- `/mobile.html` — standalone voice-first page for iPhone (car use)
+- Layout: project bar → transcript line → Mute/LLM/Connect buttons → metrics
+- Project selector: tap project name → bottom sheet modal
+- Same LiveKit WebRTC, thinking sound, session_init as main UI
+- No text input, sidebar, or session history
+- PWA meta tags for home screen
+- 📱 link in desktop header
+
 ## Thinking feedback
 - Visual: pulsing dots bubble (both text and voice)
 - Audio: "Ocean Sweep" sound loop (voice mode only, Web Audio API, no file)

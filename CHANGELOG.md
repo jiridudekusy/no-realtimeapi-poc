@@ -1,5 +1,32 @@
 # Release Notes
 
+## v2.1.0 (2026-04-09)
+
+### Mobile Voice Page
+
+New standalone mobile-optimized page at `/mobile.html` for voice-first interaction on iPhone.
+
+- Single running transcript line with colored status (LISTENING / THINKING / SPEAKING)
+- Three large buttons: Mute, LLM Hold, Connect/Disconnect
+- Project selector (tap project name → bottom sheet)
+- Thinking sound (Ocean Sweep) works
+- LLM latency metric below buttons
+- PWA meta tags for home screen
+- No sidebar, no text input, no session history — pure voice
+- 📱 link in desktop UI header
+
+### OpenAI Handler Fixes
+
+- Fixed message history — GPT now remembers previous turns in the conversation
+- Fixed context switch timing — project pipeline config loads before first LLM call
+- Own system prompt for non-Claude backends (no bash/file references)
+- Project context passed to GPT so it knows current project
+- Max 5 tool call rounds to prevent infinite loops
+- Explicit tool usage instructions so GPT actually calls navigation tools
+- Always send session_init on voice Connect (even for new chats)
+
+---
+
 ## v2.0.0 (2026-04-09)
 
 ### Pluggable Pipeline — Multi-LLM Backend Support
