@@ -15,12 +15,12 @@ Text:   HTTP POST /api/chat → Claude Agent SDK → SSE response
 Sync:   HTTP POST /api/projects/:name/chat → Claude Agent SDK → JSON response
 ```
 
-- **STT**: Deepgram Nova-3 (streaming, Czech)
-- **LLM**: Claude via Agent SDK (full agent capabilities — bash, file editing, internet access)
-- **TTS**: OpenAI tts-1 (Nova voice, multilingual)
-- **VAD**: Silero (voice activity detection)
+- **STT**: Deepgram Nova-3 (streaming, Czech) — configurable
+- **LLM**: Claude Agent SDK (default), OpenAI, or OpenRouter — configurable per-project via `pipeline.json`
+- **TTS**: OpenAI tts-1 (Nova voice, multilingual) — configurable
+- **VAD**: Silero (voice activity detection) — configurable
 
-LiveKit handles WebRTC transport, VAD, STT, and TTS. The LLM step runs outside the LiveKit pipeline — STT transcripts go to Claude Agent SDK, responses come back via `session.say()`.
+All processors are configurable via `workspace/pipeline.json` (global) and `workspace/{project}/pipeline.json` (per-project override). LiveKit handles WebRTC transport, VAD, STT, and TTS. The LLM step runs outside the LiveKit pipeline — STT transcripts go to the configured LLM backend, responses come back via `session.say()`.
 
 **Dual input**: voice and text share the same session. Say something, then type a follow-up — Claude remembers both. Text input works without voice connection (no Connect needed).
 

@@ -1,5 +1,48 @@
 # Release Notes
 
+## v2.0.0 (2026-04-09)
+
+### Pluggable Pipeline — Multi-LLM Backend Support
+
+All processors (VAD, STT, TTS, LLM) are now configurable via `pipeline.json`. The LLM backend is swappable between Claude Agent SDK, OpenAI, and OpenRouter.
+
+**Configuration:**
+- `workspace/pipeline.json` — global default (created automatically on first start)
+- `workspace/{project}/pipeline.json` — per-project override (deep merged)
+- Secrets stay in `.env` (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`)
+
+**LLM Providers:**
+- `agent-sdk` — Claude Agent SDK with full tool access (Bash, Read, Write, etc.) + navigation
+- `openai` — OpenAI Chat Completions API with navigation tools via function calling
+- `openrouter` — OpenRouter (OpenAI-compatible) with navigation tools
+
+**Example per-project override:**
+```json
+{ "llm": { "provider": "openai", "model": "gpt-4o" } }
+```
+
+**Architecture:**
+- `LLMHandler` interface — common contract for all backends
+- `OpenAIChatHandler` — handles OpenAI + OpenRouter, streaming, tool call loops
+- Navigation tools exposed as OpenAI function definitions (same logic, different transport)
+- Non-Claude backends use local message history for session persistence
+- Factory pattern: `createLLMHandler(config, opts)` picks the right implementation
+
+### New files
+- `src/plugins/llm-handler.ts` — interface + types
+- `src/plugins/openai-chat-handler.ts` — OpenAI/OpenRouter handler
+- `src/plugins/nav-functions.ts` — navigation tools as OpenAI functions
+- `src/plugins/llm-factory.ts` — factory
+- `src/pipeline-config.ts` — config loader with deep merge
+
+### Upgrade Notes
+
+No breaking changes for existing deployments. Without a `pipeline.json`, the system uses the same defaults as before (Claude Agent SDK, Deepgram STT, OpenAI TTS, Silero VAD).
+
+To use a different LLM backend, create `workspace/pipeline.json` or `workspace/{project}/pipeline.json` with the desired provider config and set the corresponding API key in `.env`.
+
+---
+
 ## v1.5.0 (2026-04-09)
 
 ### Thinking Feedback
