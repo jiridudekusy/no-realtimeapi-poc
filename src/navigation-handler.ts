@@ -18,7 +18,7 @@ export function createNavigationHandler(
           return 'No projects yet. You can create one by saying "create project <name>".';
         }
         const list = projects
-          .map((p, i) => `${i + 1}. ${p.name}${p.description ? ` — ${p.description}` : ''}`)
+          .map((p, i) => `${i + 1}. ${p.displayName || p.name}${p.description ? ` — ${p.description}` : ''}`)
           .join('\n');
         return `Available projects:\n${list}`;
       }
@@ -26,7 +26,7 @@ export function createNavigationHandler(
       case 'create_project': {
         try {
           const project = await projectStore.createProject(cmd.name, cmd.description);
-          return `Project "${project.name}" created.${project.description ? ` Description: ${project.description}` : ''}`;
+          return `Project "${project.displayName}" created (directory: ${project.name}).${project.description ? ` Description: ${project.description}` : ''}`;
         } catch (err: any) {
           return `Failed to create project: ${err.message}`;
         }
@@ -42,7 +42,7 @@ export function createNavigationHandler(
         const chats = await targetSessions.listSessions();
         const recent = chats.slice(0, 5);
 
-        let response = `Project: ${project.name}`;
+        let response = `Project: ${project.displayName || project.name}`;
         if (project.description) response += `\nDescription: ${project.description}`;
 
         if (recent.length > 0) {

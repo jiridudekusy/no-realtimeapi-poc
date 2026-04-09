@@ -110,12 +110,18 @@ async function fetchProjectTree() {
   }
 }
 
+function getProjectDisplayName(projectName) {
+  if (projectName === '_global') return null;
+  const p = cachedTreeData.projects.find(p => p.name === projectName);
+  return p?.displayName || p?.name || projectName;
+}
+
 function renderProjectTree(globalChats, projects) {
   const tree = $('#project-tree');
   tree.innerHTML = '';
   tree.appendChild(createProjectGroup('_global', '🏠 Home', null, globalChats, false));
   for (const p of projects) {
-    tree.appendChild(createProjectGroup(p.name, '📁 ' + p.name, p.description, p.chats, true));
+    tree.appendChild(createProjectGroup(p.name, '📁 ' + (p.displayName || p.name), p.description, p.chats, true));
   }
 }
 
@@ -230,7 +236,7 @@ function updateSessionBar() {
   if (sessionState.viewingFile) {
     bar.style.display = 'flex';
     const project = sessionState.currentProject || '_global';
-    projectEl.textContent = project === '_global' ? '🏠 Home' : '📁 ' + project;
+    projectEl.textContent = project === '_global' ? '🏠 Home' : '📁 ' + getProjectDisplayName(project);
     nameEl.textContent = '📄 ' + sessionState.viewingFile;
     nameEl.contentEditable = 'false';
     $('#generate-name-btn').style.display = 'none';
@@ -242,7 +248,7 @@ function updateSessionBar() {
   if (!targetId) {
     if (sessionState.currentProject && sessionState.currentProject !== '_global') {
       bar.style.display = 'flex';
-      projectEl.textContent = '📁 ' + sessionState.currentProject;
+      projectEl.textContent = '📁 ' + getProjectDisplayName(sessionState.currentProject);
       nameEl.textContent = '';
       metaEl.textContent = '';
       resumeBtn.style.display = 'none';
@@ -255,7 +261,7 @@ function updateSessionBar() {
 
   bar.style.display = 'flex';
   const project = sessionState.currentProject || '_global';
-  projectEl.textContent = project === '_global' ? '🏠 Home' : '📁 ' + project;
+  projectEl.textContent = project === '_global' ? '🏠 Home' : '📁 ' + getProjectDisplayName(project);
 
   const session = findSessionInTree(targetId);
   nameEl.textContent = session?.name || session?.preview || 'Untitled';
@@ -1169,8 +1175,10 @@ let pendingDeleteProject = null;
 
 function showDeleteProjectModal(projectName) {
   pendingDeleteProject = projectName;
-  $('#modal-project-name').textContent = projectName;
+  const display = getProjectDisplayName(projectName);
+  $('#modal-project-name').textContent = display !== projectName ? `${display} (${projectName})` : projectName;
   $('#modal-project-input').value = '';
+  $('#modal-project-input').placeholder = projectName;
   $('#modal-project-error').textContent = '';
   $('#modal-project-delete').disabled = true;
   $('#modal-delete-project').style.display = 'flex';

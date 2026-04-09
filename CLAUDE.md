@@ -48,6 +48,8 @@ Low-latency voice assistant built on LiveKit (open-source). Pluggable STT/TTS pi
 ## Projects
 - Project = directory in `/app/workspace/` with sessions/, .mcp.json, CLAUDE.md, .claude/skills/
 - `_global` = home space (no project), always exists
+- Project has `name` (slug for directory, a-zA-Z0-9 and hyphens only) and `displayName` (user-entered, can have diacritics/special chars)
+- Slugify transliterates diacritics (č→c, ř→r) via NFD normalization before stripping
 - `workspace` Docker volume at `/app/workspace`
 - Navigation via in-process MCP server (createSdkMcpServer from Agent SDK)
 - Navigation tools: list_projects, create_project, switch_project (info only), list_chats, switch_chat, new_chat, go_back, go_home

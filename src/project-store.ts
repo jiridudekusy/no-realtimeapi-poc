@@ -3,7 +3,8 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 export interface ProjectMeta {
-  name: string;
+  name: string;          // slug used for directory name (a-zA-Z0-9, -, .)
+  displayName: string;   // user-entered name (can contain diacritics, special chars)
   description: string | null;
   created: string;
 }
@@ -47,6 +48,8 @@ export class ProjectStore {
   async createProject(name: string, description?: string): Promise<ProjectMeta> {
     const slug = this.#slugify(name);
     if (slug === '_global') throw new Error('_global is reserved');
+    if (!slug) throw new Error('Project name must contain at least one letter or number');
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9\-]*$/.test(slug)) throw new Error('Directory name can only contain a-Z, 0-9 and hyphens');
 
     const existing = await this.getProject(slug);
     if (existing) throw new Error(`Project "${slug}" already exists`);
@@ -60,6 +63,7 @@ export class ProjectStore {
 
     const meta: ProjectMeta = {
       name: slug,
+      displayName: name.trim(),
       description: description || null,
       created: new Date().toISOString(),
     };
@@ -71,11 +75,12 @@ export class ProjectStore {
     return meta;
   }
 
-  async updateProject(name: string, updates: { description?: string }): Promise<void> {
+  async updateProject(name: string, updates: { description?: string; displayName?: string }): Promise<void> {
     const projects = await this.listProjects();
     const project = projects.find(p => p.name === name);
     if (!project) throw new Error(`Project "${name}" not found`);
     if (updates.description !== undefined) project.description = updates.description;
+    if (updates.displayName !== undefined) project.displayName = updates.displayName;
     await writeFile(this.#indexPath, JSON.stringify(projects, null, 2), 'utf-8');
   }
 
@@ -103,6 +108,8 @@ export class ProjectStore {
 
   #slugify(name: string): string {
     return name
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')  // strip diacritics (č→c, ř→r, ž→z, …)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
