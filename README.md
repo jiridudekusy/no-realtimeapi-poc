@@ -12,6 +12,7 @@ Browser (WebRTC) ──► LiveKit Server (SFU) ──► Agent Worker (Node.js)
 
 Voice:  Silero VAD → Deepgram STT → Claude Agent SDK → OpenAI TTS
 Text:   HTTP POST /api/chat → Claude Agent SDK → SSE response
+Sync:   HTTP POST /api/projects/:name/chat → Claude Agent SDK → JSON response
 ```
 
 - **STT**: Deepgram Nova-3 (streaming, Czech)
@@ -322,7 +323,13 @@ The key insight: LiveKit pipeline handles only **VAD + STT + TTS** (no LLM plugi
 3. Sentences stream back as SSE events, displayed in chat
 4. No LiveKit connection needed
 
-Both paths share sessions via `claudeSessionId` — switching between voice and text preserves full conversation context.
+### Sync API path
+1. External client sends `POST /api/projects/:name/chat` with JSON body
+2. Token server creates `AgentSDKHandler`, sends to Claude via `query()`
+3. Waits for full response, returns as JSON `{ text, sessionId, projectName }`
+4. For programmatic use (Claude Code, scripts, automation)
+
+All three paths share sessions via `claudeSessionId` — switching between voice, text, and sync API preserves full conversation context.
 
 When Claude needs to use a tool, it first announces what it will do (e.g., "Podívám se na počasí"), which gets flushed to TTS immediately. The user hears feedback while the tool executes.
 

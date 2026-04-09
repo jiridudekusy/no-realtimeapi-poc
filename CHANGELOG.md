@@ -1,5 +1,46 @@
 # Release Notes
 
+## v1.4.0 (2026-04-09)
+
+### Sync Chat API
+
+New synchronous JSON endpoint for programmatic access to the voice agent. Send a message, get a full response — no SSE, no streaming.
+
+```
+POST /api/projects/:name/chat
+Request:  { "text": "...", "sessionId?": "..." }
+Response: { "text": "...", "sessionId": "...", "projectName": "..." }
+```
+
+- Without `sessionId` → creates new session
+- With `sessionId` → resumes existing session (full context)
+- Shares sessions with voice and web UI chat
+- Designed for Claude Code, scripts, and automation
+
+### Docker Multi-Stage Build
+
+Production image reduced from 1.93 GB to 1.01 GB (−48%) via multi-stage build. Dev image unchanged — `docker compose` uses `target: dev`.
+
+- Moved `@types/multer` and `@types/node` to devDependencies
+- Removed unused `libgio2.0-cil` apt package
+- Added `--no-install-recommends` to apt-get
+- Added `npm cache clean --force` in build stages
+
+### Upgrade Notes
+
+**Docker compose change.** Build config now uses a target:
+
+```yaml
+agent:
+  build:
+    context: .
+    target: dev
+```
+
+If you had `build: .` in your docker-compose, update to the above. Then `docker compose build agent`.
+
+---
+
 ## v1.3.0 (2026-04-09)
 
 ### Project Display Names

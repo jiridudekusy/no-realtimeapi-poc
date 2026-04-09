@@ -409,6 +409,104 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
+// --- Sync chat endpoint (JSON request/response, for programmatic use) ---
+
+app.post('/api/projects/:name/chat', async (req, res) => {
+  const projectName = req.params.name;
+  const { text, sessionId } = req.body;
+  if (!text || typeof text !== 'string') {
+    res.status(400).json({ error: 'text is required' });
+    return;
+  }
+
+  const store = getSessionStore(projectName);
+  await store.init();
+
+  // Check voice lock
+  try {
+    const lockData = await readFile(path.join(workspaceDir, '.voice-lock.json'), 'utf-8');
+    const lock = JSON.parse(lockData);
+    if (lock && lock.sessionId === sessionId && lock.projectName === projectName) {
+      res.status(409).json({ error: 'This chat is currently active in voice mode' });
+      return;
+    }
+  } catch {}
+
+  let session;
+  if (sessionId) {
+    session = await store.getSession(sessionId);
+    if (!session) { res.status(404).json({ error: 'Session not found' }); return; }
+  } else {
+    session = await store.createSession();
+  }
+
+  // Persist user message
+  const userMsg: SessionMessage = {
+    role: 'user',
+    text,
+    timestamp: new Date().toISOString(),
+  };
+  await store.addMessage(session.sessionId, userMsg);
+
+  // Navigation MCP server
+  const { ProjectContext } = await import('./project-context.js');
+  const { createNavigationHandler } = await import('./navigation-handler.js');
+  const tempCtx = new ProjectContext(projectStore, projectName);
+  await tempCtx.init();
+  const navHandler = createNavigationHandler(projectStore, tempCtx, async () => {});
+  const navServer = createNavigationMcpServer(navHandler);
+
+  // Collect full response
+  const sentences: string[] = [];
+
+  const claude = new AgentSDKHandler({
+    model: 'claude-sonnet-4-6',
+    claudeSessionId: session.claudeSessionId || undefined,
+    mcpServers: { navigation: navServer },
+    additionalAllowedTools: NAVIGATION_TOOL_NAMES,
+    onSessionIdCaptured: async (claudeSessionId) => {
+      if (!session.claudeSessionId) {
+        session.claudeSessionId = claudeSessionId;
+        await store.setClaudeSessionId(session.sessionId, claudeSessionId);
+      }
+    },
+    onAssistantMessage: async (fullText) => {
+      const assistMsg: SessionMessage = {
+        role: 'assistant',
+        text: fullText,
+        timestamp: new Date().toISOString(),
+      };
+      await store.addMessage(session.sessionId, assistMsg);
+    },
+    onToolCall: async (name, input) => {
+      const toolMsg: SessionMessage = {
+        role: 'tool',
+        text: `${name}: ${input}`,
+        timestamp: new Date().toISOString(),
+        name,
+        input,
+      };
+      await store.addMessage(session.sessionId, toolMsg);
+    },
+  });
+
+  try {
+    await claude.sendAndStream(text, (sentence) => {
+      sentences.push(sentence);
+    });
+
+    res.json({
+      text: sentences.join(' '),
+      sessionId: session.sessionId,
+      projectName,
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err) });
+  } finally {
+    claude.close();
+  }
+});
+
 const PORT = parseInt(process.env.TOKEN_SERVER_PORT || '3001', 10);
 app.listen(PORT, () => {
   console.log(`Token server running at http://localhost:${PORT}`);

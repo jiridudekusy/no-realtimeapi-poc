@@ -36,7 +36,7 @@ When releasing a new version ("vydej verzi", "release"):
 ## Architecture
 - LiveKit pipeline: VAD → STT → (no LLM) → TTS. LLM step handled outside pipeline via say().
 - `src/agent.ts` — LiveKit agent, voice-only: listens for UserInputTranscribed, coalesces transcripts (2s debounce), sends to AgentSDKHandler, calls session.say() for TTS
-- `src/token-server.ts` — Express server: JWT tokens, static files from web/, session API, POST /api/chat for text input (SSE streaming)
+- `src/token-server.ts` — Express server: JWT tokens, static files from web/, session API, POST /api/chat (SSE), POST /api/projects/:name/chat (sync JSON)
 - `src/plugins/agent-sdk-handler.ts` — Wraps Claude Agent SDK v1 query() API with resume, interrupt, sentence splitting, LLM latency timing, onSessionIdCaptured/onAssistantMessage/onToolCall callbacks
 - `src/session-store.ts` — Session persistence (JSON files), CRUD, fulltext search, session naming
 - `src/project-store.ts` — Project CRUD, workspace directory management
@@ -45,6 +45,13 @@ When releasing a new version ("vydej verzi", "release"):
 - `src/navigation-handler.ts` — Logic for each navigation command (called by both agent and token-server)
 - `src/workspace-init.ts` — Workspace initialization, session migration from old format
 - `web/` — Vanilla HTML/JS client with livekit-client from CDN
+
+## Sync chat API (programmatic)
+- POST /api/projects/:name/chat — synchronous JSON request/response
+- Request: `{ text, sessionId? }` → Response: `{ text, sessionId, projectName }`
+- Without sessionId creates new session, with sessionId resumes existing
+- Shares sessions with voice and SSE chat (same claudeSessionId)
+- For programmatic use (Claude Code, scripts, curl) — no SSE, waits for full response
 
 ## Dual input: voice and text
 - **Voice**: Connect → LiveKit pipeline (VAD → STT → Claude → TTS). Agent responds with speech.
