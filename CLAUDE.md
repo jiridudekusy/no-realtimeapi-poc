@@ -4,6 +4,14 @@ Low-latency voice assistant built on LiveKit (open-source). Pluggable STT/TTS pi
 
 **Keep CLAUDE.md and README.md up to date** — when architecture, commands, config, or behavior changes, update both files as part of the commit.
 
+## Release flow
+When releasing a new version ("vydej verzi", "release"):
+1. Bump version in `package.json`
+2. Update `CHANGELOG.md` with release notes
+3. Update `README.md` if architecture/commands/behavior changed
+4. Commit, tag (`vX.Y.Z`), push
+5. Create GitHub release via `gh release create` with release notes from CHANGELOG
+
 ## Stack
 - TypeScript, Node.js (ESM), Express v5
 - LiveKit Agents SDK v1.x (`@livekit/agents`) — VAD, STT, TTS only (no LLM plugin)
