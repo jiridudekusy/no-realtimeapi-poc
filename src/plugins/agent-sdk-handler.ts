@@ -5,8 +5,7 @@ import {
   type CanUseTool,
   type PermissionResult,
 } from '@anthropic-ai/claude-agent-sdk';
-
-export type EventSender = (event: Record<string, unknown>) => void;
+import type { LLMHandler, LLMHandlerOptions, EventSender } from './llm-handler.js';
 
 const DANGEROUS_PATTERNS = [
   /rm\s+-rf/i,
@@ -31,20 +30,7 @@ export const SYSTEM_INSTRUCTIONS = `You are a helpful voice assistant. Your resp
 - Respond in the language the user speaks (Czech or English)
 - IMPORTANT: When you need to use a tool (bash, curl, file operations), ALWAYS first say a short sentence about what you are going to do BEFORE calling the tool. For example: "Podívám se na aktuální počasí." then call curl. This way the user hears feedback immediately while the tool runs.`;
 
-interface AgentSDKHandlerOptions {
-  model?: string;
-  onEvent?: EventSender;
-  claudeSessionId?: string;
-  onAssistantMessage?: (text: string) => void;
-  onToolCall?: (name: string, input: string) => void;
-  onSessionIdCaptured?: (claudeSessionId: string) => void;
-  mcpServers?: Record<string, unknown>;
-  additionalAllowedTools?: string[];
-  cwd?: string;
-  systemPrompt?: string;
-}
-
-export class AgentSDKHandler {
+export class AgentSDKHandler implements LLMHandler {
   #model: string;
   #onEvent: EventSender;
   #sessionId: string | null = null;
@@ -58,7 +44,7 @@ export class AgentSDKHandler {
   #cwd: string | undefined;
   #systemPrompt: string | undefined;
 
-  constructor(opts: AgentSDKHandlerOptions = {}) {
+  constructor(opts: LLMHandlerOptions = {}) {
     this.#model = opts.model || 'claude-sonnet-4-6';
     this.#onEvent = opts.onEvent || (() => {});
     this.#sessionId = opts.claudeSessionId || null;
@@ -72,6 +58,10 @@ export class AgentSDKHandler {
   }
 
   get claudeSessionId(): string | null {
+    return this.#sessionId;
+  }
+
+  get sessionId(): string | null {
     return this.#sessionId;
   }
 

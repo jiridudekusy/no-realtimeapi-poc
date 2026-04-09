@@ -10,7 +10,10 @@ import {
 import * as deepgram from '@livekit/agents-plugin-deepgram';
 import * as silero from '@livekit/agents-plugin-silero';
 import * as openai from '@livekit/agents-plugin-openai';
-import { AgentSDKHandler, SYSTEM_INSTRUCTIONS } from './plugins/agent-sdk-handler.js';
+import { SYSTEM_INSTRUCTIONS } from './plugins/agent-sdk-handler.js';
+import { loadPipelineConfig, type PipelineConfig } from './pipeline-config.js';
+import { createLLMHandler } from './plugins/llm-factory.js';
+import type { LLMHandler } from './plugins/llm-handler.js';
 import { type SessionMessage, type SessionData } from './session-store.js';
 import { ProjectStore } from './project-store.js';
 import { ProjectContext } from './project-context.js';
@@ -22,8 +25,11 @@ import path from 'node:path';
 
 export default defineAgent({
   prewarm: async (proc: JobProcess) => {
+    const workspaceDir = path.resolve(fileURLToPath(import.meta.url), '..', '..', 'workspace');
+    const pipelineConfig = await loadPipelineConfig(workspaceDir);
+    proc.userData.pipelineConfig = pipelineConfig;
     proc.userData.vad = await silero.VAD.load({
-      minSilenceDuration: 1.5, // Wait 1.5s of silence before end-of-speech (default 0.55)
+      minSilenceDuration: pipelineConfig.vad.minSilenceDuration ?? 1.5,
     });
   },
 
@@ -33,6 +39,9 @@ export default defineAgent({
       const data = new TextEncoder().encode(JSON.stringify(event));
       ctx.room.localParticipant?.publishData(data, { reliable: true });
     }
+
+    // Pipeline config from prewarm
+    const pipelineConfig = ctx.proc.userData.pipelineConfig as PipelineConfig;
 
     // Workspace + project context
     const workspaceDir = path.resolve(fileURLToPath(import.meta.url), '..', '..', 'workspace');
@@ -125,8 +134,8 @@ export default defineAgent({
 
       const navServer = createNavigationMcpServer(navHandler);
 
-      claude = new AgentSDKHandler({
-        model: 'claude-sonnet-4-6',
+      const switchPipelineConfig = await loadPipelineConfig(workspaceDir, projectName);
+      claude = createLLMHandler(switchPipelineConfig.llm, {
         cwd: config.cwd,
         systemPrompt: fullPrompt,
         claudeSessionId: projectCtx.currentSession?.claudeSessionId || undefined,
@@ -136,6 +145,8 @@ export default defineAgent({
         onSessionIdCaptured: (id) => handleSessionIdCaptured(id),
         onAssistantMessage: (text) => handleAssistantMessage(text),
         onToolCall: (name, input) => handleToolCall(name, input),
+        navigationHandler: navHandler,
+        messageHistory: [],
       });
 
       await updateVoiceLock();
@@ -157,8 +168,7 @@ export default defineAgent({
     const initialPrompt = [SYSTEM_INSTRUCTIONS, initialConfig.systemPrompt, navPrompt].filter(Boolean).join('\n\n');
     const navServer = createNavigationMcpServer(navHandler);
 
-    let claude = new AgentSDKHandler({
-      model: 'claude-sonnet-4-6',
+    let claude: LLMHandler = createLLMHandler(pipelineConfig.llm, {
       cwd: initialConfig.cwd,
       systemPrompt: initialPrompt,
       mcpServers: { navigation: navServer, ...initialConfig.mcpConfig },
@@ -167,6 +177,8 @@ export default defineAgent({
       onSessionIdCaptured: (id) => handleSessionIdCaptured(id),
       onAssistantMessage: (text) => handleAssistantMessage(text),
       onToolCall: (name, input) => handleToolCall(name, input),
+      navigationHandler: navHandler,
+      messageHistory: [],
     });
 
     // LiveKit pipeline: VAD + STT + TTS only, NO LLM
@@ -174,8 +186,14 @@ export default defineAgent({
 
     const agentSession = new voice.AgentSession({
       vad: ctx.proc.userData.vad as silero.VAD,
-      stt: new deepgram.STT({ model: 'nova-3', language: 'cs' }),
-      tts: new openai.TTS({ model: 'tts-1', voice: 'nova' }),
+      stt: new deepgram.STT({
+        model: (pipelineConfig.stt.model || 'nova-3') as 'nova-3',
+        language: (pipelineConfig.stt.language as string) || 'cs',
+      }),
+      tts: new openai.TTS({
+        model: (pipelineConfig.tts.model as string) || 'tts-1',
+        voice: (pipelineConfig.tts.voice || 'nova') as 'nova',
+      }),
       // No LLM — we handle it ourselves via Agent SDK
     });
 

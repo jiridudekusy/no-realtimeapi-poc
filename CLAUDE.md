@@ -113,6 +113,16 @@ When releasing a new version ("vydej verzi", "release"):
 - query.interrupt() — Ctrl+C equivalent for barge-in
 - All LLM calls go through Agent SDK (subscription-based, no per-token cost) — never use Anthropic API directly
 
+## Pipeline Configuration
+- `workspace/pipeline.json` — global default processor config (created by workspace-init)
+- `workspace/{project}/pipeline.json` — per-project override (deep merged over global)
+- Processors: vad (silero), stt (deepgram), tts (openai), llm (agent-sdk | openai | openrouter)
+- LLM providers: `agent-sdk` (full tools via Claude Agent SDK), `openai` (nav tools only), `openrouter` (nav tools only)
+- Non-Claude backends use OpenAI function calling for navigation, local message history for session persistence
+- Secrets in .env: OPENAI_API_KEY, OPENROUTER_API_KEY
+- Config loader: `src/pipeline-config.ts`, LLM factory: `src/plugins/llm-factory.ts`
+- Per-project LLM override enables mixing backends (e.g. Claude for main, GPT for a specific project)
+
 ## Permissions
 - permissionMode: 'default' — tools go through permission chain
 - allowedTools: Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, ToolSearch — auto-approved (step 4)
