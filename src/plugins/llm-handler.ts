@@ -1,5 +1,8 @@
 // src/plugins/llm-handler.ts
+import type { NavigationCallback } from '../mcp/navigation-server.js';
+
 export type EventSender = (event: Record<string, unknown>) => void;
+export type { NavigationCallback };
 
 export interface LLMHandlerOptions {
   model?: string;
@@ -15,7 +18,7 @@ export interface LLMHandlerOptions {
   /** Local message history for backends without server-side persistence */
   messageHistory?: Array<{ role: string; text: string }>;
   /** Navigation handler for non-Agent-SDK backends */
-  navigationHandler?: (cmd: unknown) => Promise<string>;
+  navigationHandler?: NavigationCallback;
 }
 
 export interface LLMHandler {
