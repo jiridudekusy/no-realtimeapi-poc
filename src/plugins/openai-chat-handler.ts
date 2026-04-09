@@ -3,8 +3,31 @@
 
 import OpenAI from 'openai';
 import type { LLMHandler, LLMHandlerOptions, NavigationCallback } from './llm-handler.js';
-import { SYSTEM_INSTRUCTIONS } from './agent-sdk-handler.js';
 import { navigationTools, executeNavFunction } from './nav-functions.js';
+
+const OPENAI_SYSTEM_INSTRUCTIONS = `You are a helpful voice assistant. Your responses will be converted to speech, so:
+- Use plain conversational language without markdown formatting
+- Do not use bullet points, asterisks, pound signs, or other markdown
+- Keep responses concise — two to three sentences max unless the user asks for detail
+- NEVER write digits or numerals — always spell out every number as words
+- NEVER write units as symbols — always spell them out
+- Spell out acronyms letter by letter with spaces
+- Avoid code blocks; describe things in plain language
+- Respond in the language the user speaks (Czech or English)
+- You do NOT have access to the internet, file system, bash, or any external tools
+- If asked to do something requiring internet or file access, explain that you cannot do that
+
+NAVIGATION TOOLS — you MUST use these when the user wants to manage projects or chats:
+- list_projects: Call this immediately when user asks about available projects. Do NOT just talk about it — call the tool.
+- create_project: Create a new project when user asks.
+- switch_project: Get info about a project and its chats. Call this before switching.
+- list_chats: List conversations in a project. Call this when user asks what chats exist.
+- switch_chat: Switch to a specific chat. Call after user confirms.
+- new_chat: Start a new conversation in a project.
+- go_back / go_home: Navigate back or to home.
+- rename_chat: Rename current conversation.
+
+IMPORTANT: When the user asks you to do something with projects or chats, CALL THE TOOL IMMEDIATELY. Do not ask "should I do it?" — just do it. Only confirm before destructive actions like switching away from current context.`;
 
 export interface OpenAIChatHandlerOptions extends LLMHandlerOptions {
   baseUrl: string;
@@ -29,7 +52,12 @@ export class OpenAIChatHandler implements LLMHandler {
       apiKey: opts.apiKey,
     });
     this.#model = opts.model;
-    this.#systemPrompt = opts.systemPrompt ?? SYSTEM_INSTRUCTIONS;
+    // Always use our own base prompt — ignore opts.systemPrompt which contains
+    // Agent SDK instructions referencing tools we don't have (bash, file system, etc.)
+    // Append project context if provided (e.g. "You are in project X")
+    this.#systemPrompt = opts.projectContext
+      ? OPENAI_SYSTEM_INSTRUCTIONS + '\n\n' + opts.projectContext
+      : OPENAI_SYSTEM_INSTRUCTIONS;
     this.#navigationHandler = opts.navigationHandler;
     this.#onEvent = opts.onEvent ?? (() => {});
     this.#onAssistantMessage = opts.onAssistantMessage ?? (() => {});
@@ -53,7 +81,7 @@ export class OpenAIChatHandler implements LLMHandler {
     this.#abortController = new AbortController();
     const signal = this.#abortController.signal;
 
-    // Build initial message list
+    // Build initial message list from accumulated history
     const messages: OpenAI.ChatCompletionMessageParam[] = [
       { role: 'system', content: this.#systemPrompt },
       ...this.#messageHistory.map((m) => ({
@@ -68,6 +96,9 @@ export class OpenAIChatHandler implements LLMHandler {
     let llmFirstTokenTime: number | null = null;
 
     let fullResponse = '';
+
+    const MAX_TOOL_ROUNDS = 5;
+    let toolRound = 0;
 
     try {
       // Tool call loop — model may call multiple rounds of tools before giving final response
@@ -150,6 +181,12 @@ export class OpenAIChatHandler implements LLMHandler {
 
         // If the model finished with tool calls, execute them and loop
         if (finishReason === 'tool_calls' && this.#navigationHandler) {
+          toolRound++;
+          if (toolRound > MAX_TOOL_ROUNDS) {
+            console.log(`[OpenAIChat] Max tool rounds (${MAX_TOOL_ROUNDS}) reached, stopping`);
+            break;
+          }
+
           const toolCallList = Object.values(pendingToolCalls);
 
           if (toolCallList.length === 0) break;
@@ -204,9 +241,13 @@ export class OpenAIChatHandler implements LLMHandler {
         break;
       }
 
-      // Emit full assembled response
+      // Emit full assembled response and accumulate history for next turn
       if (fullResponse.trim()) {
         this.#onAssistantMessage(fullResponse.trim());
+      }
+      this.#messageHistory.push({ role: 'user', text });
+      if (fullResponse.trim()) {
+        this.#messageHistory.push({ role: 'assistant', text: fullResponse.trim() });
       }
 
       // Emit timing metrics

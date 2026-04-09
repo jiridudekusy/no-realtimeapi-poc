@@ -111,7 +111,7 @@ export default defineAgent({
     let pendingSwitch: { projectName: string; sessionId: string | null } | null = null;
 
     async function performContextSwitch(projectName: string, sessionId: string | null) {
-      // Don't switch mid-query — defer until turn completes
+      // Don't switch mid-query — defer until next LLM send
       pendingSwitch = { projectName, sessionId };
       console.log(`[Agent] Context switch queued: ${projectName}/${sessionId || 'new'}`);
     }
@@ -121,6 +121,7 @@ export default defineAgent({
       const { projectName, sessionId } = pendingSwitch;
       pendingSwitch = null;
 
+      sendEvent({ type: 'debug', text: `executePendingSwitch: project=${projectName}, session=${sessionId || 'new'}` });
       claude.close();
 
       await projectCtx.switchTo(projectName, sessionId || undefined);
@@ -138,6 +139,7 @@ export default defineAgent({
       claude = createLLMHandler(switchPipelineConfig.llm, {
         cwd: config.cwd,
         systemPrompt: fullPrompt,
+        projectContext: navPrompt,
         claudeSessionId: projectCtx.currentSession?.claudeSessionId || undefined,
         mcpServers: { navigation: navServer, ...config.mcpConfig },
         additionalAllowedTools: NAVIGATION_TOOL_NAMES,
@@ -164,13 +166,14 @@ export default defineAgent({
 
     // Claude Agent SDK handler — lives outside the LiveKit pipeline
     const initialConfig = await projectCtx.loadProjectConfig();
-    const navPrompt = 'When switching projects or chats, ALWAYS confirm with the user before calling switch_chat, new_chat, go_back, or go_home. Tell them what will happen and ask for confirmation.';
-    const initialPrompt = [SYSTEM_INSTRUCTIONS, initialConfig.systemPrompt, navPrompt].filter(Boolean).join('\n\n');
+    const initialNavPrompt = `You are in the HOME space (no project).\nWhen switching projects or chats, ALWAYS confirm with the user before calling switch_chat, new_chat, go_back, or go_home. Tell them what will happen and ask for confirmation.`;
+    const initialPrompt = [SYSTEM_INSTRUCTIONS, initialConfig.systemPrompt, initialNavPrompt].filter(Boolean).join('\n\n');
     const navServer = createNavigationMcpServer(navHandler);
 
     let claude: LLMHandler = createLLMHandler(pipelineConfig.llm, {
       cwd: initialConfig.cwd,
       systemPrompt: initialPrompt,
+      projectContext: initialNavPrompt,
       mcpServers: { navigation: navServer, ...initialConfig.mcpConfig },
       additionalAllowedTools: NAVIGATION_TOOL_NAMES,
       onEvent: sendEvent,
@@ -250,6 +253,7 @@ export default defineAgent({
           const projectName = (msg.projectName as string) || '_global';
           const sessionId = msg.sessionId as string | undefined;
           console.log(`[Agent] session_init: project=${projectName}, session=${sessionId}`);
+          sendEvent({ type: 'debug', text: `session_init: project=${projectName}, session=${sessionId || 'new'}` });
           await performContextSwitch(projectName, sessionId || null);
         }
       } catch (err) {
@@ -261,7 +265,11 @@ export default defineAgent({
 
     let processing = false;
 
-    function processUserText(userText: string) {
+    async function processUserText(userText: string) {
+      // Execute pending context switch before sending to LLM
+      sendEvent({ type: 'debug', text: `processUserText: pendingSwitch=${pendingSwitch ? pendingSwitch.projectName : 'none'}` });
+      await executePendingSwitch();
+
       ensureSession().then(session => {
         const userMsg: SessionMessage = {
           role: 'user',

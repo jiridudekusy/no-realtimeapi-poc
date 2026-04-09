@@ -15,6 +15,8 @@ export interface LLMHandlerOptions {
   additionalAllowedTools?: string[];
   cwd?: string;
   systemPrompt?: string;
+  /** Project context string for non-Agent-SDK backends (e.g. "You are in project X") */
+  projectContext?: string;
   /** Local message history for backends without server-side persistence */
   messageHistory?: Array<{ role: string; text: string }>;
   /** Navigation handler for non-Agent-SDK backends */

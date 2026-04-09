@@ -733,10 +733,9 @@ $('#connect-btn').addEventListener('click', async () => {
   try {
     // Set pending resume BEFORE connecting — agent sends session_info
     // immediately after connect, so pendingResumeSessionId must be ready
-    if (sessionState.currentSessionId) {
-      sessionState.pendingResumeSessionId = sessionState.currentSessionId;
-      sessionState.pendingResumeProject = sessionState.currentProject;
-    }
+    // Always send project context, even without a session (new chat in a project)
+    sessionState.pendingResumeSessionId = sessionState.currentSessionId || '__new__';
+    sessionState.pendingResumeProject = sessionState.currentProject;
 
     if (!state.connected) {
       const res = await fetch('/api/token');
@@ -1060,10 +1059,11 @@ room.on(RoomEvent.DataReceived, async (data, participant) => {
       if (sessionState.pendingResumeSessionId) {
         const resumeId = sessionState.pendingResumeSessionId;
         sessionState.pendingResumeSessionId = null;
+        const initSessionId = resumeId === '__new__' ? undefined : resumeId;
         room.localParticipant.publishData(
           new TextEncoder().encode(JSON.stringify({
             type: 'session_init',
-            sessionId: resumeId,
+            sessionId: initSessionId,
             projectName: sessionState.pendingResumeProject || '_global',
           })),
           { reliable: true }
