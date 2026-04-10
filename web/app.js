@@ -582,7 +582,11 @@ async function sendTextMessage() {
             state.lastAssistMsg = state.currentAssistMsg;
             state.currentAssistMsg = null;
           }
-          sessionState.currentSessionId = data.sessionId;
+          // Only update sessionId from done if we're still in the same project.
+          // If context_switched changed the project during this turn, don't overwrite.
+          if (!data.projectName || data.projectName === sessionState.currentProject) {
+            sessionState.currentSessionId = data.sessionId;
+          }
           fetchProjectTree();
         } else if (data.type === 'context_switched') {
           setCurrentProject(data.projectName);
