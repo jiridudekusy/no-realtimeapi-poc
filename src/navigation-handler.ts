@@ -19,13 +19,18 @@ export function createNavigationHandler(
     switch (cmd.type) {
       case 'list_projects': {
         const projects = await projectStore.listProjects();
+        const current = projectContext.currentProject;
+        const currentLabel = current === '_global' ? 'HOME (_global)' : current;
         if (projects.length === 0) {
-          return 'No projects yet. You can create one by saying "create project <name>".';
+          return `You are currently in: ${currentLabel}\nNo projects yet. You can create one by saying "create project <name>".`;
         }
         const list = projects
-          .map((p, i) => `${i + 1}. "${p.displayName || p.name}" (id: ${p.name})${p.description ? ` — ${p.description}` : ''}`)
+          .map((p, i) => {
+            const active = p.name === current ? ' ← CURRENT' : '';
+            return `${i + 1}. "${p.displayName || p.name}" (id: ${p.name})${p.description ? ` — ${p.description}` : ''}${active}`;
+          })
           .join('\n');
-        return `Available projects (use the id value for switch_project):\n${list}`;
+        return `You are currently in: ${currentLabel}\n\nAvailable projects (use the id value for switch_project):\n${list}`;
       }
 
       case 'create_project': {
