@@ -181,8 +181,17 @@ export class AgentSDKHandler implements LLMHandler {
 
           if (msg.subtype === 'success') {
             this.#onEvent({ type: 'agent_sdk', event: 'turn_complete', cost: msg.total_cost_usd, result: msg.result?.slice(0, 100) });
+          } else if (this.#sessionId) {
+            // Turn error with resume — might be stale/incompatible session.
+            // Clear sessionId so next call starts fresh.
+            const errorDetail = msg.error || msg.result || msg.subtype;
+            console.error(`[AgentSDK] Turn error with resume (${this.#sessionId}): ${msg.subtype}`, String(errorDetail).slice(0, 200));
+            console.log('[AgentSDK] Clearing sessionId — next call will start fresh');
+            this.#sessionId = null;
+            this.#onEvent({ type: 'agent_sdk', event: 'turn_error', error: `${msg.subtype} (will retry without resume)` });
           } else {
-            console.error(`[AgentSDK] Turn error: ${msg.subtype}`);
+            const errorDetail = msg.error || msg.result || msg.subtype;
+            console.error(`[AgentSDK] Turn error: ${msg.subtype}`, String(errorDetail).slice(0, 200));
             this.#onEvent({ type: 'agent_sdk', event: 'turn_error', error: msg.subtype });
           }
           break;
