@@ -582,6 +582,9 @@ async function sendTextMessage() {
         } else if (data.type === 'context_switched') {
           sessionState.currentProject = data.projectName || '_global';
           sessionState.currentSessionId = data.sessionId;
+          // Clear conversation for the new project context
+          // (text chat — not voice, so no active bubbles to preserve)
+          $('#conversation').innerHTML = '';
           fetchProjectTree();
           updateSessionBar();
         } else if (data.type === 'error') {
