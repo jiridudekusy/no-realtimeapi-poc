@@ -1,5 +1,31 @@
 # Release Notes
 
+## v2.2.0 (2026-04-10)
+
+### AgentCore Refactoring
+
+Extracted all business logic (LLM, navigation, sessions, context switching) into standalone `AgentCore` class. `agent.ts` is now a thin LiveKit wrapper.
+
+- **`/api/voice-session`** — new headless endpoint: stateful multi-turn conversation with navigation, no LiveKit needed
+- **`/api/inject`** — inject text into active voice room for testing
+- **`scripts/voice-test.ts`** — 9 integration tests (basic chat, navigation, project switch, GPT-4o backend, bash tools)
+
+### Navigation Fixes
+
+- `list_projects` now shows current project ("You are currently in: X") and marks active with CURRENT
+- All navigation commands resolve displayName → slug (case-insensitive)
+- Stale `claudeSessionId` auto-cleared on `turn_error` (both voice and text paths)
+
+### Text Chat Context Switch Fixes
+
+- Conversation area properly clears and resets on project switch
+- `done` event no longer overwrites sessionId set by `context_switched`
+- Message bubbles visible after switch (DOM state reset)
+- Current project persisted in `sessionStorage` (per-tab, survives refresh)
+- Voice path preserves conversation during context switch (no clear mid-turn)
+
+---
+
 ## v2.1.0 (2026-04-09)
 
 ### Mobile Voice Page
