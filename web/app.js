@@ -592,8 +592,9 @@ async function sendTextMessage() {
           setCurrentProject(data.projectName);
           sessionState.currentSessionId = data.sessionId;
           // Clear conversation for the new project context
-          // (text chat — not voice, so no active bubbles to preserve)
           $('#conversation').innerHTML = '';
+          state.currentAssistMsg = null;
+          state.currentUserMsg = null;
           fetchProjectTree();
           updateSessionBar();
         } else if (data.type === 'error') {
