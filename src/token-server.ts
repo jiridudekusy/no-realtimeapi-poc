@@ -70,6 +70,99 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+// --- Headless voice session (AgentCore without LiveKit) ---
+
+import { AgentCore } from './agent-core.js';
+
+const headlessSessions = new Map<string, { core: AgentCore; lastUsed: number }>();
+
+// Cleanup idle sessions every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, session] of headlessSessions) {
+    if (now - session.lastUsed > 10 * 60 * 1000) { // 10 min idle
+      session.core.close();
+      headlessSessions.delete(id);
+      console.log(`[Headless] Session ${id} cleaned up (idle)`);
+    }
+  }
+}, 5 * 60 * 1000);
+
+app.post('/api/voice-session', async (req, res) => {
+  const { text, connectionId, projectName } = req.body;
+  if (!text || typeof text !== 'string') {
+    res.status(400).json({ error: 'text is required' });
+    return;
+  }
+
+  try {
+    let session = connectionId ? headlessSessions.get(connectionId) : undefined;
+    let newConnectionId = connectionId;
+
+    if (!session) {
+      // Create new headless AgentCore
+      newConnectionId = `hs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const sentences: string[] = [];
+      const events: Record<string, unknown>[] = [];
+
+      const core = new AgentCore({
+        workspaceDir,
+        callbacks: {
+          onEvent: (event) => events.push(event),
+          onSay: (text) => sentences.push(text),
+        },
+      });
+      await core.init();
+
+      // Switch to requested project
+      if (projectName && projectName !== '_global') {
+        await core.handleSessionInit(projectName);
+        await core.executePendingSwitch();
+      }
+
+      session = { core, lastUsed: Date.now() };
+      headlessSessions.set(newConnectionId, session);
+      console.log(`[Headless] New session: ${newConnectionId} (project: ${projectName || '_global'})`);
+    }
+
+    session.lastUsed = Date.now();
+
+    await session.core.processUserText(text);
+    // Small delay to ensure async message persistence completes
+    await new Promise(r => setTimeout(r, 100));
+
+    // Read response from session store — get all assistant messages after last user message
+    const currentSession = session.core.currentSession;
+    let responseText = '';
+    if (currentSession) {
+      const store = session.core.projectContext.sessionStore;
+      const sessionData = await store.getSession(currentSession.sessionId);
+      if (sessionData && sessionData.messages.length > 0) {
+        // Find last user message index, get all assistant replies after it
+        let lastUserIdx = -1;
+        for (let i = sessionData.messages.length - 1; i >= 0; i--) {
+          if (sessionData.messages[i].role === 'user') { lastUserIdx = i; break; }
+        }
+        const replies = sessionData.messages
+          .slice(lastUserIdx + 1)
+          .filter((m: SessionMessage) => m.role === 'assistant')
+          .map((m: SessionMessage) => m.text);
+        responseText = replies.join(' ');
+      }
+    }
+
+    res.json({
+      text: responseText,
+      connectionId: newConnectionId,
+      projectName: session.core.currentProject,
+      sessionId: currentSession?.sessionId || null,
+    });
+  } catch (err: any) {
+    console.error('[Headless] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // --- Inject text into voice agent (for testing) ---
 
 const roomService = new RoomServiceClient(
@@ -86,12 +179,12 @@ app.post('/api/inject', async (req, res) => {
     let targetRoom = roomName;
     if (!targetRoom) {
       const rooms = await roomService.listRooms();
-      const active = rooms.find(r => r.name.startsWith('voice-'));
-      if (!active) { res.status(404).json({ error: 'No active voice room' }); return; }
+      const active = rooms.find(r => r.name.startsWith('voice-') && r.numParticipants > 1);
+      if (!active) { res.status(404).json({ error: 'No active voice room (connect in web UI first)' }); return; }
       targetRoom = active.name;
     }
     const data = new TextEncoder().encode(JSON.stringify({ type: 'inject_text', text }));
-    await roomService.sendData(targetRoom, data, DataPacket_Kind.RELIABLE);
+    await roomService.sendData(targetRoom, data, DataPacket_Kind.RELIABLE, {});
     res.json({ ok: true, room: targetRoom });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
