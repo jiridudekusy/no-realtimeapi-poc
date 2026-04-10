@@ -497,6 +497,12 @@ app.post('/api/chat', async (req, res) => {
     onEvent: (event) => {
       // Forward events to client for server event log
       res.write(`data: ${JSON.stringify({ type: 'event', event })}\n\n`);
+      // If turn_error with a resume session, clear stale claudeSessionId from store
+      if (event.event === 'turn_error' && session.claudeSessionId) {
+        console.log(`[Chat] turn_error with resume — clearing stale claudeSessionId from session ${session.sessionId}`);
+        session.claudeSessionId = null;
+        store.setClaudeSessionId(session.sessionId, null).catch(() => {});
+      }
     },
     onSessionIdCaptured: async (claudeSessionId) => {
       if (!session.claudeSessionId) {

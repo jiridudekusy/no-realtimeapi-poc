@@ -110,7 +110,7 @@ export class SessionStore {
     });
   }
 
-  async setClaudeSessionId(sessionId: string, claudeSessionId: string): Promise<void> {
+  async setClaudeSessionId(sessionId: string, claudeSessionId: string | null): Promise<void> {
     const session = await this.getSession(sessionId);
     if (!session) throw new Error(`Session ${sessionId} not found`);
     session.claudeSessionId = claudeSessionId;
