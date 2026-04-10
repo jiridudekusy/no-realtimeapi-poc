@@ -68,7 +68,7 @@ const sessionState = {
   viewingFile: null,
   sessions: [],
   pendingResumeSessionId: null, // set before connect, sent when agent is ready
-  currentProject: '_global',
+  currentProject: localStorage.getItem('currentProject') || '_global',
   pendingResumeProject: null,
 };
 
@@ -143,7 +143,7 @@ function createProjectGroup(projectName, displayName, description, chats, canDel
   header.addEventListener('click', (e) => {
     if (e.target.closest('.project-delete')) return;
     // Set as current project
-    sessionState.currentProject = projectName;
+    setCurrentProject(projectName);
     updateSessionBar();
     // Toggle collapse
     const chatsDiv = group.querySelector('.project-chats');
@@ -350,6 +350,11 @@ async function fetchProjectTreeFiltered(query) {
   }
 }
 
+function setCurrentProject(name) {
+  sessionState.currentProject = name || '_global';
+  localStorage.setItem('currentProject', sessionState.currentProject);
+}
+
 async function onSessionClick(sessionId, projectName) {
   if (sessionId === sessionState.currentSessionId && projectName === sessionState.currentProject && state.connected) {
     closeSidebar();
@@ -360,7 +365,7 @@ async function onSessionClick(sessionId, projectName) {
     room.disconnect();
   }
 
-  sessionState.currentProject = projectName || '_global';
+  setCurrentProject(projectName);
   sessionState.currentSessionId = null;
 
   try {
@@ -580,7 +585,7 @@ async function sendTextMessage() {
           sessionState.currentSessionId = data.sessionId;
           fetchProjectTree();
         } else if (data.type === 'context_switched') {
-          sessionState.currentProject = data.projectName || '_global';
+          setCurrentProject(data.projectName);
           sessionState.currentSessionId = data.sessionId;
           // Clear conversation for the new project context
           // (text chat — not voice, so no active bubbles to preserve)
@@ -1075,14 +1080,14 @@ room.on(RoomEvent.DataReceived, async (data, participant) => {
         return;
       }
       sessionState.currentSessionId = msg.sessionId;
-      if (msg.projectName) sessionState.currentProject = msg.projectName;
+      if (msg.projectName) setCurrentProject(msg.projectName);
       sessionState.viewingSessionId = null;
       fetchProjectTree();
     }
 
     // Context switched (project change from voice)
     else if (msg.type === 'context_switched') {
-      sessionState.currentProject = msg.projectName || '_global';
+      setCurrentProject(msg.projectName);
       sessionState.currentSessionId = msg.sessionId;
       // Don't clear conversation during active voice — messages are still being generated.
       // Only clear if NOT connected (text-initiated switch) or switching to session with history.
@@ -1320,7 +1325,7 @@ $('#modal-project-delete').addEventListener('click', async () => {
     }
     $('#modal-delete-project').style.display = 'none';
     if (sessionState.currentProject === pendingDeleteProject) {
-      sessionState.currentProject = '_global';
+      setCurrentProject('_global');
       sessionState.currentSessionId = null;
     }
     fetchProjectTree();
