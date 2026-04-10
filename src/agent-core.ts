@@ -92,7 +92,16 @@ export class AgentCore {
       claudeSessionId: this.#projectCtx.currentSession?.claudeSessionId || undefined,
       mcpServers: { navigation: navServer, ...config.mcpConfig },
       additionalAllowedTools: NAVIGATION_TOOL_NAMES,
-      onEvent: (e) => this.#callbacks.onEvent(e),
+      onEvent: (e) => {
+        // Clear stale claudeSessionId on turn_error with resume
+        if (e.event === 'turn_error' && this.#projectCtx.currentSession?.claudeSessionId) {
+          console.log('[AgentCore] turn_error — clearing stale claudeSessionId');
+          const session = this.#projectCtx.currentSession;
+          session.claudeSessionId = null;
+          this.#projectCtx.sessionStore.setClaudeSessionId(session.sessionId, null).catch(() => {});
+        }
+        this.#callbacks.onEvent(e);
+      },
       onSessionIdCaptured: (id) => this.#handleSessionIdCaptured(id),
       onAssistantMessage: (text) => this.#handleAssistantMessage(text),
       onToolCall: (name, input) => this.#handleToolCall(name, input),
