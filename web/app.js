@@ -68,7 +68,7 @@ const sessionState = {
   viewingFile: null,
   sessions: [],
   pendingResumeSessionId: null, // set before connect, sent when agent is ready
-  currentProject: localStorage.getItem('currentProject') || '_global',
+  currentProject: sessionStorage.getItem('currentProject') || '_global',
   pendingResumeProject: null,
 };
 
@@ -352,7 +352,7 @@ async function fetchProjectTreeFiltered(query) {
 
 function setCurrentProject(name) {
   sessionState.currentProject = name || '_global';
-  localStorage.setItem('currentProject', sessionState.currentProject);
+  sessionStorage.setItem('currentProject', sessionState.currentProject);
 }
 
 async function onSessionClick(sessionId, projectName) {
