@@ -1081,20 +1081,26 @@ room.on(RoomEvent.DataReceived, async (data, participant) => {
     else if (msg.type === 'context_switched') {
       sessionState.currentProject = msg.projectName || '_global';
       sessionState.currentSessionId = msg.sessionId;
-      if (msg.sessionId) {
-        try {
-          const res = await fetch(`/api/projects/${sessionState.currentProject}/sessions/${msg.sessionId}`);
-          if (res.ok) {
-            const session = await res.json();
-            $('#conversation').innerHTML = '';
-            for (const m of session.messages) {
-              if (m.role === 'tool') continue;
-              addMessage(m.role === 'user' ? 'user' : 'assistant', m.text);
+      // Don't clear conversation during active voice — messages are still being generated.
+      // Only clear if NOT connected (text-initiated switch) or switching to session with history.
+      if (!state.connected) {
+        if (msg.sessionId) {
+          try {
+            const res = await fetch(`/api/projects/${sessionState.currentProject}/sessions/${msg.sessionId}`);
+            if (res.ok) {
+              const session = await res.json();
+              if (session.messages && session.messages.length > 0) {
+                $('#conversation').innerHTML = '';
+                for (const m of session.messages) {
+                  if (m.role === 'tool') continue;
+                  addMessage(m.role === 'user' ? 'user' : 'assistant', m.text);
+                }
+              }
             }
-          }
-        } catch {}
-      } else {
-        $('#conversation').innerHTML = '';
+          } catch {}
+        } else {
+          $('#conversation').innerHTML = '';
+        }
       }
       fetchProjectTree();
       updateSessionBar();
