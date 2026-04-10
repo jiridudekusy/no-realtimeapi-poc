@@ -42,7 +42,10 @@ export class ProjectStore {
 
   async getProject(name: string): Promise<ProjectMeta | null> {
     const projects = await this.listProjects();
-    return projects.find(p => p.name === name) || null;
+    // Match by slug first, then by displayName (case-insensitive)
+    return projects.find(p => p.name === name)
+      || projects.find(p => p.displayName?.toLowerCase() === name.toLowerCase())
+      || null;
   }
 
   async createProject(name: string, description?: string): Promise<ProjectMeta> {

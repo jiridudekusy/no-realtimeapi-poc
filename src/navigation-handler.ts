@@ -1,4 +1,4 @@
-import { ProjectStore } from './project-store.js';
+import { ProjectStore, type ProjectMeta } from './project-store.js';
 import { ProjectContext } from './project-context.js';
 import { SessionStore } from './session-store.js';
 import type { NavigationCommand } from './mcp/navigation-server.js';
@@ -10,6 +10,11 @@ export function createNavigationHandler(
   projectContext: ProjectContext,
   onContextSwitch: ContextSwitchCallback,
 ) {
+  // Resolve displayName or slug to slug
+  async function resolveProject(name: string): Promise<ProjectMeta | null> {
+    return projectStore.getProject(name); // getProject now matches by slug or displayName
+  }
+
   return async (cmd: NavigationCommand): Promise<string> => {
     switch (cmd.type) {
       case 'list_projects': {
@@ -18,9 +23,9 @@ export function createNavigationHandler(
           return 'No projects yet. You can create one by saying "create project <name>".';
         }
         const list = projects
-          .map((p, i) => `${i + 1}. ${p.displayName || p.name}${p.description ? ` — ${p.description}` : ''}`)
+          .map((p, i) => `${i + 1}. "${p.displayName || p.name}" (id: ${p.name})${p.description ? ` — ${p.description}` : ''}`)
           .join('\n');
-        return `Available projects:\n${list}`;
+        return `Available projects (use the id value for switch_project):\n${list}`;
       }
 
       case 'create_project': {
@@ -37,7 +42,8 @@ export function createNavigationHandler(
         if (!project) {
           return `Project "${cmd.projectName}" not found. Use list_projects to see available projects.`;
         }
-        const targetSessions = new SessionStore(projectStore.getSessionsDir(cmd.projectName));
+        const slug = project.name; // always use slug for directory operations
+        const targetSessions = new SessionStore(projectStore.getSessionsDir(slug));
         await targetSessions.init();
         const chats = await targetSessions.listSessions();
         const recent = chats.slice(0, 5);
@@ -60,7 +66,12 @@ export function createNavigationHandler(
       }
 
       case 'list_chats': {
-        const targetProject = cmd.projectName || projectContext.currentProject;
+        let targetProject = cmd.projectName || projectContext.currentProject;
+        // Resolve displayName → slug
+        if (cmd.projectName) {
+          const p = await resolveProject(cmd.projectName);
+          if (p) targetProject = p.name;
+        }
         let store;
         if (targetProject === projectContext.currentProject) {
           store = projectContext.sessionStore;
@@ -89,13 +100,17 @@ export function createNavigationHandler(
       }
 
       case 'switch_chat': {
-        await onContextSwitch(cmd.projectName, cmd.chatId);
-        return `Switched to chat in project "${cmd.projectName}".`;
+        const p = await resolveProject(cmd.projectName);
+        const slug = p ? p.name : cmd.projectName;
+        await onContextSwitch(slug, cmd.chatId);
+        return `Switched to chat in project "${p?.displayName || slug}".`;
       }
 
       case 'new_chat': {
-        await onContextSwitch(cmd.projectName, null);
-        return `New chat started in project "${cmd.projectName}".`;
+        const p = await resolveProject(cmd.projectName);
+        const slug = p ? p.name : cmd.projectName;
+        await onContextSwitch(slug, null);
+        return `New chat started in project "${p?.displayName || slug}".`;
       }
 
       case 'go_back': {
