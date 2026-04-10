@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import { AccessToken, type VideoGrant } from 'livekit-server-sdk';
+import { AccessToken, type VideoGrant, RoomServiceClient, DataPacket_Kind } from 'livekit-server-sdk';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFile, readdir, stat } from 'node:fs/promises';
@@ -67,6 +67,34 @@ app.get('/api/health', async (_req, res) => {
     res.json({ status: 'ok', livekit: process.env.LIVEKIT_URL || 'unknown' });
   } catch (err) {
     res.status(503).json({ status: 'error', error: String(err) });
+  }
+});
+
+// --- Inject text into voice agent (for testing) ---
+
+const roomService = new RoomServiceClient(
+  process.env.LIVEKIT_URL || 'http://localhost:7880',
+  process.env.LIVEKIT_API_KEY!,
+  process.env.LIVEKIT_API_SECRET!,
+);
+
+app.post('/api/inject', async (req, res) => {
+  const { text, room: roomName } = req.body;
+  if (!text) { res.status(400).json({ error: 'text is required' }); return; }
+  try {
+    // Find active room if not specified
+    let targetRoom = roomName;
+    if (!targetRoom) {
+      const rooms = await roomService.listRooms();
+      const active = rooms.find(r => r.name.startsWith('voice-'));
+      if (!active) { res.status(404).json({ error: 'No active voice room' }); return; }
+      targetRoom = active.name;
+    }
+    const data = new TextEncoder().encode(JSON.stringify({ type: 'inject_text', text }));
+    await roomService.sendData(targetRoom, data, DataPacket_Kind.RELIABLE);
+    res.json({ ok: true, room: targetRoom });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

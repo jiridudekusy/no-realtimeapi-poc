@@ -249,6 +249,13 @@ export default defineAgent({
             processUserText(combined);
           }
         }
+        if (msg.type === 'inject_text') {
+          const text = msg.text as string;
+          if (text) {
+            console.log(`[Agent] inject_text: ${text.slice(0, 80)}`);
+            processUserText(text);
+          }
+        }
         if (msg.type === 'session_init') {
           const projectName = (msg.projectName as string) || '_global';
           const sessionId = msg.sessionId as string | undefined;
