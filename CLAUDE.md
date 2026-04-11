@@ -164,6 +164,16 @@ When releasing a new version ("vydej verzi", "release"):
 - `workspace` Docker volume for projects, sessions, and files (replaces old session-data)
 - Dev compose mounts `./src` and `./web` — restart (not rebuild) for code changes
 
+## iOS App
+- `ios/` — Native SwiftUI voice client (equivalent to mobile.html)
+- LiveKit Swift SDK via SPM (only dependency)
+- AirPods Pro squeeze / AirPods Max Digital Crown → mute/unmute via AVAudioSession.muteStateDidChangeNotification
+- Hardcoded server URL in `ios/VoiceAssistant/VoiceAssistant/Config.swift`
+- Sideload via Xcode (no Apple Developer account needed)
+- Build: open `ios/VoiceAssistant/VoiceAssistant.xcodeproj` in Xcode, run on device
+- Features: voice connect/disconnect, mute, LLM hold, project selector, transcript, thinking sound+dots, metrics
+- Light + dark mode (follows system)
+
 ## Tailscale HTTPS (for remote/mobile access)
 - `tailscale serve --bg 3001` — HTTPS proxy for web client
 - `tailscale serve --bg --https 7880 7880` — HTTPS/WSS proxy for LiveKit
