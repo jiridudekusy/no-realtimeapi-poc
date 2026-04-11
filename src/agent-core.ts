@@ -197,29 +197,60 @@ export class AgentCore {
     }
     this.#processing = true;
 
-    // Create ReadableStream upfront for streaming TTS
-    let streamController: ReadableStreamDefaultController<string> | null = null;
-    if (this.#callbacks.onSpeechStream) {
-      const readable = new ReadableStream<string>({
-        start(controller) { streamController = controller; },
-      });
-      this.#callbacks.onSpeechStream(readable);
-    }
+    // Speech stream manager: auto-rotates streams on idle to avoid LiveKit 10s timeout.
+    // If no data arrives for IDLE_MS, closes current stream and opens a new one on next write.
+    const IDLE_MS = 5000;
+    let currentController: ReadableStreamDefaultController<string> | null = null;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+    const useStreaming = !!this.#callbacks.onSpeechStream;
+
+    const resetIdleTimer = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      if (!useStreaming) return;
+      idleTimer = setTimeout(() => {
+        // Idle too long — close current stream so TTS doesn't timeout
+        if (currentController) {
+          try { currentController.close(); } catch {}
+          currentController = null;
+          console.log('[AgentCore] Speech stream rotated (idle)');
+        }
+      }, IDLE_MS);
+    };
+
+    const writeSpeech = (text: string) => {
+      if (useStreaming) {
+        if (!currentController) {
+          // Create new stream (first write or after idle rotation)
+          const readable = new ReadableStream<string>({
+            start(controller) { currentController = controller; },
+          });
+          this.#callbacks.onSpeechStream!(readable);
+        }
+        try { currentController!.enqueue(text + ' '); } catch {}
+        resetIdleTimer();
+      }
+      this.#callbacks.onSay(text);
+    };
+
+    const closeSpeech = () => {
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+      if (currentController) {
+        try { currentController.close(); } catch {}
+        currentController = null;
+      }
+    };
 
     try {
       await this.#claude.sendAndStream(userText, (sentence) => {
-        if (streamController) {
-          try { streamController.enqueue(sentence + ' '); } catch {}
-        }
-        this.#callbacks.onSay(sentence);
+        writeSpeech(sentence);
       }, () => {
-        // tool call — no-op
+        // tool call — no-op, stream stays open
       });
     } catch (err) {
       console.error('[AgentCore] LLM error:', err);
       this.#callbacks.onEvent({ type: 'agent_sdk', event: 'error', error: String(err) });
     } finally {
-      if (streamController !== null) { try { (streamController as ReadableStreamDefaultController<string>).close(); } catch {} }
+      closeSpeech();
       this.#processing = false;
       await this.executePendingSwitch();
     }

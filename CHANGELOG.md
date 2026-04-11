@@ -1,5 +1,18 @@
 # Release Notes
 
+## v2.3.0 (2026-04-11)
+
+### Streaming TTS
+
+Sentences from LLM now flow directly into TTS via ReadableStream instead of individual `say()` calls per sentence. TTS starts synthesizing each sentence as it arrives — no more waiting for the full LLM response.
+
+- Speech stream created lazily on first sentence (not upfront — avoids LiveKit 10s idle timeout)
+- Auto-rotation: if no data for 5s (e.g. LLM thinking, tool call), current stream closes and a new one opens on next sentence
+- Works with both Claude Agent SDK and OpenAI/OpenRouter backends
+- Fallback to per-sentence `onSay()` for headless mode
+
+---
+
 ## v2.2.0 (2026-04-10)
 
 ### AgentCore Refactoring
