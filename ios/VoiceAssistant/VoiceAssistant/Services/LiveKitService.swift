@@ -1,11 +1,21 @@
 @preconcurrency import LiveKit
 import Foundation
 import AVFoundation
+import CallKit
 import Combine
 
 @MainActor
-final class LiveKitService: ObservableObject {
+final class LiveKitService: NSObject, ObservableObject {
     let room = Room()
+    private let callController = CXCallController()
+    private let provider: CXProvider = {
+        let config = CXProviderConfiguration()
+        config.supportsVideo = false
+        config.supportedHandleTypes = [.generic]
+        config.maximumCallsPerCallGroup = 1
+        return CXProvider(configuration: config)
+    }()
+    private var callUUID: UUID?
     private let thinkingSound = ThinkingSound()
 
     @Published var connectionState: ConnectionState = .disconnected
@@ -20,10 +30,12 @@ final class LiveKitService: ObservableObject {
     private var pendingProject: String?
     private var userFinal = ""
 
-    init() {
+    override init() {
+        super.init()
         room.add(delegate: self)
+        provider.setDelegate(self, queue: .main)
 
-        // Observe AirPods mute gesture via AVAudioApplication (iOS 17+)
+        // AVAudioApplication notification as backup for non-CallKit mute changes
         NotificationCenter.default.addObserver(
             forName: AVAudioApplication.inputMuteStateChangeNotification,
             object: nil,
@@ -50,6 +62,12 @@ final class LiveKitService: ObservableObject {
         pendingProject = project
 
         do {
+            // Force voiceChat mode (not videoChat) — required for AirPods mute gesture
+            // LiveKit uses isSpeakerOutputPreferred to choose: true=videoChat, false=voiceChat
+            AudioManager.shared.isSpeakerOutputPreferred = false
+            // Opt in to system mute mechanism
+            try AVAudioApplication.shared.setInputMuted(false)
+
             let token = try await fetchToken()
             try await room.connect(
                 url: Config.livekitURL,
@@ -61,6 +79,17 @@ final class LiveKitService: ObservableObject {
             isHeld = false
             status = .listening
             transcriptText = "Listening..."
+
+            // Report "call" to iOS via CallKit — enables AirPods mute gesture
+            let uuid = UUID()
+            callUUID = uuid
+            let handle = CXHandle(type: .generic, value: "Voice Assistant")
+            let startAction = CXStartCallAction(call: uuid, handle: handle)
+            startAction.isVideo = false
+            let transaction = CXTransaction(action: startAction)
+            try? await callController.request(transaction)
+            // Mark as connected so iOS shows "in call" state
+            provider.reportOutgoingCall(with: uuid, connectedAt: Date())
         } catch {
             print("[LiveKit] Connect error: \(error)")
             connectionState = .disconnected
@@ -71,6 +100,14 @@ final class LiveKitService: ObservableObject {
 
     func disconnect() async {
         thinkingSound.stop()
+        // End CallKit call
+        if let uuid = callUUID {
+            let endAction = CXEndCallAction(call: uuid)
+            let transaction = CXTransaction(action: endAction)
+            try? await callController.request(transaction)
+            callUUID = nil
+
+        }
         await room.disconnect()
         connectionState = .disconnected
         status = .disconnected
@@ -231,5 +268,27 @@ extension LiveKitService: RoomDelegate {
                 }
             }
         }
+    }
+}
+
+// MARK: - CXProviderDelegate (CallKit — enables AirPods mute gesture)
+
+extension LiveKitService: CXProviderDelegate {
+    nonisolated func providerDidReset(_ provider: CXProvider) {}
+
+    nonisolated func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
+        action.fulfill()
+    }
+
+    nonisolated func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
+        action.fulfill()
+    }
+
+    nonisolated func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {
+        Task { @MainActor in
+            self.isMuted = action.isMuted
+            try? await self.room.localParticipant.setMicrophone(enabled: !action.isMuted)
+        }
+        action.fulfill()
     }
 }
