@@ -197,71 +197,29 @@ export class AgentCore {
     }
     this.#processing = true;
 
-    // Streaming mode: create one ReadableStream per turn, TTS consumes it directly
-    // Fallback mode: buffer sentences and call onSay() per chunk
-    const useStreaming = !!this.#callbacks.onSpeechStream;
-    let streamWriter: WritableStreamDefaultWriter<string> | null = null;
-    let streamStarted = false;
-
-    const writeSentence = (text: string) => {
-      if (useStreaming) {
-        if (!streamStarted) {
-          // Create stream on first sentence (not on thinking/tool-only turns)
-          const { readable, writable } = new TransformStream<string>();
-          streamWriter = writable.getWriter();
-          streamStarted = true;
-          this.#callbacks.onSpeechStream!(readable);
-        }
-        streamWriter!.write(text).catch(() => {});
-      }
-      // Always call onSay too (for logging, headless text collection)
-      this.#callbacks.onSay(text);
-    };
-
-    const closeStream = () => {
-      if (streamWriter) {
-        streamWriter.close().catch(() => {});
-        streamWriter = null;
-      }
-    };
-
-    // Sentence buffer (still needed to batch fast consecutive sentences)
-    let buffer: string[] = [];
-    let flushTimer: ReturnType<typeof setTimeout> | null = null;
-    let firstSentenceAt: number | null = null;
-    const COALESCE_MS = useStreaming ? 50 : 200;  // faster flush in streaming mode
-    const MAX_WAIT_MS = useStreaming ? 500 : 1500;
-
-    const flush = () => {
-      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-      if (buffer.length === 0) return;
-      const text = buffer.join(' ');
-      buffer = [];
-      firstSentenceAt = null;
-      writeSentence(text);
-    };
-
-    const scheduleFlush = () => {
-      if (flushTimer) clearTimeout(flushTimer);
-      const elapsed = firstSentenceAt ? Date.now() - firstSentenceAt : 0;
-      const remaining = Math.max(0, MAX_WAIT_MS - elapsed);
-      flushTimer = setTimeout(flush, Math.min(COALESCE_MS, remaining));
-    };
+    // Create ReadableStream upfront for streaming TTS
+    let streamController: ReadableStreamDefaultController<string> | null = null;
+    if (this.#callbacks.onSpeechStream) {
+      const readable = new ReadableStream<string>({
+        start(controller) { streamController = controller; },
+      });
+      this.#callbacks.onSpeechStream(readable);
+    }
 
     try {
       await this.#claude.sendAndStream(userText, (sentence) => {
-        if (firstSentenceAt === null) firstSentenceAt = Date.now();
-        buffer.push(sentence);
-        scheduleFlush();
+        if (streamController) {
+          try { streamController.enqueue(sentence + ' '); } catch {}
+        }
+        this.#callbacks.onSay(sentence);
       }, () => {
-        flush(); // tool call — flush pending text before tool runs
+        // tool call — no-op
       });
-      flush();
     } catch (err) {
       console.error('[AgentCore] LLM error:', err);
       this.#callbacks.onEvent({ type: 'agent_sdk', event: 'error', error: String(err) });
     } finally {
-      closeStream();
+      if (streamController !== null) { try { (streamController as ReadableStreamDefaultController<string>).close(); } catch {} }
       this.#processing = false;
       await this.executePendingSwitch();
     }

@@ -64,7 +64,7 @@ export default defineAgent({
           console.log(`[Agent] Say (${text.length}ch): ${text.slice(0, 80)}...`);
         },
         onSpeechStream: (stream) => {
-          console.log('[Agent] Speech stream started');
+          console.log('[Agent] Speech stream → agentSession.say(stream)');
           agentSession.say(stream as any, { allowInterruptions: true, addToChatCtx: false });
         },
       },
