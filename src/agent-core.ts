@@ -16,8 +16,12 @@ import { createNavigationHandler } from './navigation-handler.js';
 export interface AgentCoreCallbacks {
   /** Send event to client (thinking, metrics, context_switched, etc.) */
   onEvent: (event: Record<string, unknown>) => void;
-  /** Speak text via TTS (voice mode) or collect text (headless mode) */
+  /** Speak text via TTS — per-sentence chunks (headless mode, fallback) */
   onSay: (text: string) => void;
+  /** Start streaming speech — receives a ReadableStream that TTS consumes directly.
+   *  If provided, sentences flow continuously into TTS instead of chunked say() calls.
+   *  Voice mode: pass stream to agentSession.say(stream). */
+  onSpeechStream?: (stream: ReadableStream<string>) => void;
 }
 
 export interface AgentCoreOptions {
@@ -193,12 +197,40 @@ export class AgentCore {
     }
     this.#processing = true;
 
-    // Sentence buffer — flushes to onSay callback
+    // Streaming mode: create one ReadableStream per turn, TTS consumes it directly
+    // Fallback mode: buffer sentences and call onSay() per chunk
+    const useStreaming = !!this.#callbacks.onSpeechStream;
+    let streamWriter: WritableStreamDefaultWriter<string> | null = null;
+    let streamStarted = false;
+
+    const writeSentence = (text: string) => {
+      if (useStreaming) {
+        if (!streamStarted) {
+          // Create stream on first sentence (not on thinking/tool-only turns)
+          const { readable, writable } = new TransformStream<string>();
+          streamWriter = writable.getWriter();
+          streamStarted = true;
+          this.#callbacks.onSpeechStream!(readable);
+        }
+        streamWriter!.write(text).catch(() => {});
+      }
+      // Always call onSay too (for logging, headless text collection)
+      this.#callbacks.onSay(text);
+    };
+
+    const closeStream = () => {
+      if (streamWriter) {
+        streamWriter.close().catch(() => {});
+        streamWriter = null;
+      }
+    };
+
+    // Sentence buffer (still needed to batch fast consecutive sentences)
     let buffer: string[] = [];
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
     let firstSentenceAt: number | null = null;
-    const COALESCE_MS = 200;
-    const MAX_WAIT_MS = 1500;
+    const COALESCE_MS = useStreaming ? 50 : 200;  // faster flush in streaming mode
+    const MAX_WAIT_MS = useStreaming ? 500 : 1500;
 
     const flush = () => {
       if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
@@ -206,7 +238,7 @@ export class AgentCore {
       const text = buffer.join(' ');
       buffer = [];
       firstSentenceAt = null;
-      this.#callbacks.onSay(text);
+      writeSentence(text);
     };
 
     const scheduleFlush = () => {
@@ -229,6 +261,7 @@ export class AgentCore {
       console.error('[AgentCore] LLM error:', err);
       this.#callbacks.onEvent({ type: 'agent_sdk', event: 'error', error: String(err) });
     } finally {
+      closeStream();
       this.#processing = false;
       await this.executePendingSwitch();
     }
