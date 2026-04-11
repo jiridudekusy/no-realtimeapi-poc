@@ -4,10 +4,20 @@ struct ContentView: View {
     @StateObject private var lk = LiveKitService()
     @StateObject private var projects = ProjectService()
     @State private var showProjectSheet = false
+    @State private var showSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
-            projectBar
+            HStack {
+                projectBar
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape")
+                        .foregroundStyle(.secondary)
+                        .padding(10)
+                }
+                .disabled(lk.connectionState == .connected)
+                .opacity(lk.connectionState == .connected ? 0.3 : 1)
+            }
             transcriptArea
                 .padding(.top, 8)
             controlButtons
@@ -24,6 +34,9 @@ struct ContentView: View {
                 handleProjectSelect(project)
             }
             .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsSheet()
         }
     }
 

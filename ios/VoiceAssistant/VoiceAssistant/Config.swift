@@ -1,7 +1,18 @@
 import Foundation
 
 enum Config {
-    // Change this to your server URL (Tailscale HTTPS or local)
-    static let serverURL = "https://jdk-neo.taila4682.ts.net"
-    static let livekitURL = "wss://jdk-neo.taila4682.ts.net:7880"
+    private static let defaults = UserDefaults.standard
+
+    static let defaultServerURL = "https://jdk-neo.taila4682.ts.net"
+    static let defaultLiveKitURL = "wss://jdk-neo.taila4682.ts.net:7880"
+
+    static var serverURL: String {
+        get { defaults.string(forKey: "serverURL") ?? defaultServerURL }
+        set { defaults.set(newValue, forKey: "serverURL") }
+    }
+
+    static var livekitURL: String {
+        get { defaults.string(forKey: "livekitURL") ?? defaultLiveKitURL }
+        set { defaults.set(newValue, forKey: "livekitURL") }
+    }
 }
