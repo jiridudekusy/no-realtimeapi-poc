@@ -37,7 +37,7 @@ When releasing a new version ("vydej verzi", "release"):
 - LiveKit pipeline: VAD → STT → (no LLM) → TTS. LLM step handled outside pipeline via say().
 - `src/agent.ts` — LiveKit agent, voice-only: listens for UserInputTranscribed, coalesces transcripts (2s debounce), sends to AgentSDKHandler, calls session.say() for TTS
 - `src/token-server.ts` — Express server: JWT tokens, static files from web/, session API, POST /api/chat (SSE), POST /api/projects/:name/chat (sync JSON)
-- `src/plugins/agent-sdk-handler.ts` — Wraps Claude Agent SDK v1 query() API with resume, interrupt, sentence splitting, LLM latency timing, onSessionIdCaptured/onAssistantMessage/onToolCall callbacks
+- `src/plugins/agent-sdk-handler.ts` — Wraps Claude Agent SDK v1 query() API with resume, interrupt, sentence splitting, LLM latency timing, onSessionIdCaptured/onAssistantMessage/onToolCall callbacks. Content blocks processed in order: text → buffer, tool_use → flush buffer then fire onToolCall
 - `src/session-store.ts` — Session persistence (JSON files), CRUD, fulltext search, session naming
 - `src/project-store.ts` — Project CRUD, workspace directory management
 - `src/project-context.ts` — Tracks current project/session, navigation stack, loads project config (CLAUDE.md + .mcp.json)
@@ -70,7 +70,8 @@ When releasing a new version ("vydej verzi", "release"):
 - Navigation tools: list_projects, create_project, switch_project (info only), list_chats, switch_chat, new_chat, go_back, go_home
 - Context switch: closes Claude handler, creates new one with target project's cwd, MCP servers, CLAUDE.md
 - System prompt layered: global CLAUDE.md + project CLAUDE.md
-- MCP servers layered: global .mcp.json + project .mcp.json
+- MCP servers layered: global .mcp.json + project .mcp.json (supports standard `mcpServers` wrapper format)
+- MCP tools auto-allowed via `mcp__<server>__*` wildcard patterns in allowedTools
 - Navigation stack for go_back (push on switch, pop on back)
 - Voice lock file prevents text writes to chat active in voice (HTTP 409)
 - Voice connection is persistent — projects/chats switch under it without reconnecting

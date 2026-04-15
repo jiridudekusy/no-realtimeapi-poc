@@ -101,12 +101,15 @@ export class ProjectContext {
       : '';
     const systemPrompt = [globalClaudeMd, projectClaudeMd].filter(Boolean).join('\n\n');
 
-    const globalMcp = await this.#readJsonOrEmpty(
+    const globalMcpRaw = await this.#readJsonOrEmpty(
       path.join(workspaceDir, '_global', '.mcp.json'),
     );
-    const projectMcp = this.#currentProject !== '_global'
+    const projectMcpRaw = this.#currentProject !== '_global'
       ? await this.#readJsonOrEmpty(path.join(projectDir, '.mcp.json'))
       : {};
+    // Unwrap standard .mcp.json format (has mcpServers wrapper) or use flat format
+    const globalMcp = (globalMcpRaw.mcpServers || globalMcpRaw) as Record<string, unknown>;
+    const projectMcp = (projectMcpRaw.mcpServers || projectMcpRaw) as Record<string, unknown>;
     const mcpConfig = { ...globalMcp, ...projectMcp };
 
     return {

@@ -479,8 +479,9 @@ app.post('/api/chat', async (req, res) => {
   });
   const navServer = createNavigationMcpServer(navHandler);
 
-  // Load pipeline config for this project
+  // Load pipeline config and project MCP servers
   const chatPipelineConfig = await loadPipelineConfig(workspaceDir, projectName);
+  const projectConfig = await tempCtx.loadProjectConfig();
 
   // Build message history for non-Claude backends
   const history = (session.messages || [])
@@ -488,10 +489,14 @@ app.post('/api/chat', async (req, res) => {
     .map((m: SessionMessage) => ({ role: m.role, text: m.text }));
 
   // Create handler for this request
+  const mcpServerNames = Object.keys(projectConfig.mcpConfig);
   const claude = createLLMHandler(chatPipelineConfig.llm, {
     claudeSessionId: session.claudeSessionId || undefined,
-    mcpServers: { navigation: navServer },
-    additionalAllowedTools: NAVIGATION_TOOL_NAMES,
+    mcpServers: { navigation: navServer, ...projectConfig.mcpConfig },
+    additionalAllowedTools: [
+      ...NAVIGATION_TOOL_NAMES,
+      ...mcpServerNames.map((name) => `mcp__${name}__*`),
+    ],
     navigationHandler: navHandler,
     messageHistory: history,
     onEvent: (event) => {
@@ -594,8 +599,9 @@ app.post('/api/projects/:name/chat', async (req, res) => {
   const navHandler = createNavigationHandler(projectStore, tempCtx, async () => {});
   const navServer = createNavigationMcpServer(navHandler);
 
-  // Load pipeline config for this project
+  // Load pipeline config and project MCP servers
   const syncPipelineConfig = await loadPipelineConfig(workspaceDir, projectName);
+  const syncProjectConfig = await tempCtx.loadProjectConfig();
 
   // Build message history for non-Claude backends
   const syncHistory = (session.messages || [])
@@ -605,10 +611,14 @@ app.post('/api/projects/:name/chat', async (req, res) => {
   // Collect full response
   const sentences: string[] = [];
 
+  const syncMcpNames = Object.keys(syncProjectConfig.mcpConfig);
   const claude = createLLMHandler(syncPipelineConfig.llm, {
     claudeSessionId: session.claudeSessionId || undefined,
-    mcpServers: { navigation: navServer },
-    additionalAllowedTools: NAVIGATION_TOOL_NAMES,
+    mcpServers: { navigation: navServer, ...syncProjectConfig.mcpConfig },
+    additionalAllowedTools: [
+      ...NAVIGATION_TOOL_NAMES,
+      ...syncMcpNames.map((name) => `mcp__${name}__*`),
+    ],
     navigationHandler: navHandler,
     messageHistory: syncHistory,
     onSessionIdCaptured: async (claudeSessionId) => {

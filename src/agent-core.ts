@@ -95,7 +95,10 @@ export class AgentCore {
       projectContext: navPrompt,
       claudeSessionId: this.#projectCtx.currentSession?.claudeSessionId || undefined,
       mcpServers: { navigation: navServer, ...config.mcpConfig },
-      additionalAllowedTools: NAVIGATION_TOOL_NAMES,
+      additionalAllowedTools: [
+        ...NAVIGATION_TOOL_NAMES,
+        ...Object.keys(config.mcpConfig).map((name) => `mcp__${name}__*`),
+      ],
       onEvent: (e) => {
         // Clear stale claudeSessionId on turn_error with resume
         if (e.event === 'turn_error' && this.#projectCtx.currentSession?.claudeSessionId) {
@@ -244,7 +247,8 @@ export class AgentCore {
       await this.#claude.sendAndStream(userText, (sentence) => {
         writeSpeech(sentence);
       }, () => {
-        // tool call — no-op, stream stays open
+        // tool call — flush buffered text to TTS by closing current stream
+        closeSpeech();
       });
     } catch (err) {
       console.error('[AgentCore] LLM error:', err);

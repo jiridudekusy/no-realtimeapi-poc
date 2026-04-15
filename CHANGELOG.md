@@ -1,5 +1,24 @@
 # Release Notes
 
+## v2.4.0 (2026-04-15)
+
+### Project MCP Servers
+
+Per-project `.mcp.json` now works end-to-end — voice, SSE text chat, and sync chat all load project MCP servers.
+
+- `.mcp.json` unwraps standard `mcpServers` wrapper (compatible with `claude mcp add` format)
+- MCP tools auto-allowed via `mcp__<server>__*` wildcard patterns — no manual permission needed
+- Text chat endpoints (SSE + sync) now load project MCP config (previously only voice did)
+
+### TTS Flush on Tool Call
+
+When the LLM announces an action before calling a tool ("Podívám se na zprávy"), the speech now plays immediately instead of staying buffered until the tool finishes.
+
+- `agent-sdk-handler`: merged two content block loops into one — text blocks processed before tool_use, buffer flushed on tool call
+- `agent-core`: tool call callback triggers `closeSpeech()` — closes current ReadableStream so LiveKit's `BasicSentenceTokenizer` flushes to TTS, new stream created on next sentence
+
+---
+
 ## v2.3.0 (2026-04-11)
 
 ### Streaming TTS

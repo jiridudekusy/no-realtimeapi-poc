@@ -222,22 +222,8 @@ export class AgentSDKHandler implements LLMHandler {
           }
         }
 
-        // Log tool use from assistant messages (Bash, Read, Write, etc.)
-        if (msg.type === 'assistant' && msg.message?.content) {
-          for (const block of msg.message.content) {
-            if (block.type === 'tool_use') {
-              const input = block.input || {};
-              const cmd = input.command || input.file_path || input.pattern || JSON.stringify(input);
-              const inputStr = typeof cmd === 'string' ? cmd.slice(0, 300) : JSON.stringify(cmd).slice(0, 300);
-              console.log(`[AgentSDK] Tool call: ${block.name}: ${inputStr.slice(0, 100)}`);
-              this.#onEvent({ type: 'tool_call', name: block.name, input: inputStr });
-              onToolCall?.();
-              this.#onToolCall(block.name, inputStr);
-            }
-          }
-        }
-
-        // Full assistant message text (fallback if no streaming)
+        // Process assistant message content blocks in order:
+        // text → buffer + sentence split, tool_use → flush buffer then log
         if (msg.type === 'assistant' && msg.message?.content) {
           for (const block of msg.message.content) {
             if (block.type === 'text' && block.text) {
@@ -259,6 +245,26 @@ export class AgentSDKHandler implements LLMHandler {
                 }
               }
               fullText = remainder;
+            }
+
+            if (block.type === 'tool_use') {
+              // Flush buffered text before tool executes
+              if (fullText.trim()) {
+                if (!llmFirstTokenTime) {
+                  llmFirstTokenTime = Date.now();
+                }
+                this.#onEvent({ type: 'llm_recv', text: fullText.trim() });
+                onSentence(fullText.trim());
+                allEmittedText += fullText.trim() + ' ';
+                fullText = '';
+              }
+              const input = block.input || {};
+              const cmd = input.command || input.file_path || input.pattern || JSON.stringify(input);
+              const inputStr = typeof cmd === 'string' ? cmd.slice(0, 300) : JSON.stringify(cmd).slice(0, 300);
+              console.log(`[AgentSDK] Tool call: ${block.name}: ${inputStr.slice(0, 100)}`);
+              this.#onEvent({ type: 'tool_call', name: block.name, input: inputStr });
+              onToolCall?.();
+              this.#onToolCall(block.name, inputStr);
             }
           }
         }
